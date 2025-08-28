@@ -1,0 +1,32 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "multilingual_factchecking"
+version = "0.0.1"
+description = "This project develops an automated framework that utilizes large language models (LLMs) to evaluate and verify factual claims in text, with support for multiple languages"
+authors = [
+  { name = "Babu_kumar" },
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License"
+]
+requires-python = "~=3.11.0"
+
+
+[tool.ruff]
+line-length = 99
+src = ["multilingual_factchecking"]
+include = ["pyproject.toml", "multilingual_factchecking/**/*.py"]
+
+[tool.ruff.lint]
+extend-select = ["I"]  # Add import sorting
+
+[tool.ruff.lint.isort]
+known-first-party = ["multilingual_factchecking"]
+force-sort-within-sections = true
+
