@@ -281,7 +281,10 @@ def main():
         all_results.append(result)
 
     # ---- Save ----
-    output_file = PROCESSED_DATA_DIR/f"xfact_{args.input}_with_retrieved_evidence.jsonl"
+    if args.chunker == "sentence":
+        output_file = PROCESSED_DATA_DIR/f"xfact_{args.input}_with_sentence_level_chunked_retrieved_evidence.jsonl"
+    else:
+        output_file = PROCESSED_DATA_DIR/f"xfact_{args.input}_with_semantic_level_chunked_retrieved_evidence.jsonl"
     save_jsonl(output_file, all_results)
 
     print(f"Done. Wrote {len(all_results)} rows to {output_file}")

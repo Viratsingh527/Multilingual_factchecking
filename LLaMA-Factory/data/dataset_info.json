@@ -714,5 +714,8 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "Xfact_Train_Sentence_Level_Chunked_Retrieved_Evidence": {
+    "file_name": "xfact_train_with_sentence_level_chunked_retrieved_evidence.json"
   }
 }

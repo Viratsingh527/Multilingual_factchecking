@@ -2,6 +2,8 @@
 /data/interim/
 /data/raw/
 /data/processed/
+/LLaMA-Factory/data/
+/LLaMA-Factory/saves/
 
 # Mac OS-specific storage files
 .DS_Store
