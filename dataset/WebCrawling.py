@@ -112,5 +112,5 @@ async def process_dataset(file_path: str, output_path: str, limit: int = None):
 
 if __name__ == "__main__":
     input_file = RAW_DATA_DIR/"ood.tsv"
-    output_file = INTERIM_DATA_DIR/"webdata_no_chunks_ood.jsonl"
+    output_file = INTERIM_DATA_DIR/"xfact_ood_with_webdata.jsonl"
     asyncio.run(process_dataset(input_file, output_file))
