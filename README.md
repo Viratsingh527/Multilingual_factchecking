@@ -59,3 +59,12 @@ This project develops an automated framework that utilizes large language models
 
 --------
 
+## Citation
+
+This project makes use of [LLaMA-Factory](https://arxiv.org/abs/2403.13372).  
+If you use this repository, please also cite their work:
+
+> Yaowei Zheng, Richong Zhang, Junhao Zhang, Yanhan Ye, Zheyan Luo, Zhangchi Feng, and Yongqiang Ma.  
+> *LlamaFactory: Unified Efficient Fine-Tuning of 100+ Language Models*.  
+> Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 3: System Demonstrations), 2024.  
+> [https://arxiv.org/abs/2403.13372](https://arxiv.org/abs/2403.13372)
