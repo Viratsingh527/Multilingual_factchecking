@@ -59,7 +59,7 @@ This project develops an automated framework that utilizes large language models
 
 --------
 
-## Citation
+## Acknowledgement
 
 This project makes use of [LLaMA-Factory](https://arxiv.org/abs/2403.13372).  
 If you use this repository, please also cite their work:
