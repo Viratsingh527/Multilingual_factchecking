@@ -10,23 +10,23 @@ lora_rank: 8
 lora_target: all
 
 ### dataset
-dataset: Xfact_Train_Data_With_Sentence_Level_Chunked_Retrieved_Evidence
+dataset: Xfact_Train_Data_With_Search_Snippet_Evidence
 template: llama3
-cutoff_len: 10000
+cutoff_len: 2800
 # max_samples: 1000        # Optional: enable for quick test only
 overwrite_cache: true
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/llama_8b_xfact_sentence_chunking_evidences/lora/sft
+output_dir: saves/llama_8b_xfact_search_snippet_evidences/lora/sft
 logging_steps: 10
 save_steps: 500
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: llama_8b_xfact_sentence_chunking_evidences_lora
+run_name: llama_8b_xfact_search_snippet_evidences_lora
 
 ### train
 per_device_train_batch_size: 1
@@ -38,7 +38,7 @@ warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
-# seed: 26
+
 
 ### eval
 # eval_dataset: Xfact_Dev_Llama

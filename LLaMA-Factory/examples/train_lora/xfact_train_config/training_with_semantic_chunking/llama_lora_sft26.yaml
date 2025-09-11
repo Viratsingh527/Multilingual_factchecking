@@ -10,7 +10,7 @@ lora_rank: 8
 lora_target: all
 
 ### dataset
-dataset: Xfact_Train_Embedding
+dataset: Xfact_Train_Data_With_Semantic_Level_Chunked_Retrieved_Evidence
 template: llama3
 cutoff_len: 10000
 # max_samples: 1000        # Optional: enable for quick test only
@@ -19,14 +19,14 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/llama_8b_semantic_chunking_evidences26/lora/sft
+output_dir: saves/llama_8b_xfact_semantic_chunking_evidences/lora/sft_26
 logging_steps: 10
 save_steps: 500
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: llama3_xfact_llama_embedding_evidences_lora26
+run_name: llama_8b_xfact_semantic_chunking_evidences_lora26
 
 ### train
 per_device_train_batch_size: 1
