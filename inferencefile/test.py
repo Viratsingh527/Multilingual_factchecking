@@ -33,7 +33,7 @@ import re
 from difflib import get_close_matches
 from pathlib import Path
 from typing import Dict, List, Optional
-
+import csv
 import torch
 from peft import PeftModel
 from sklearn.metrics import classification_report
@@ -159,10 +159,7 @@ def get_model_shortname(model_path: str) -> str:
 def build_prompt(claim: str, evidences: List[Dict[str, str]], lang_code: str) -> str:
     """Assemble the full prompt string."""
 
-    language = LANGUAGE_MAP.get(lang_code, lang_code)
-    # instruction = (
-    #     f"Verify the claim based on the given evidences. Possible labels are: 'True', 'Mostly True', 'Partly True/Misleading', 'False', 'Mostly False', 'Complicated/Hard to Categorise', 'Other'."
-    # )
+    language = LANGUAGE_MAP.get(lang_code)
     instruction = (
         f"Classify the given {language} claim into one of the seven categories "
         "(TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, FALSE, MOSTLY‑FALSE, "
@@ -231,8 +228,56 @@ def extract_label(response: str) -> str:
 # Evaluation logic
 ###############################################################################
 
+def load_data(file_path, lang="all"):
+    ext = os.path.splitext(file_path)[-1].lower()
+
+    # ---- Load data depending on format ----
+    if ext == ".json":
+        with open(file_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+            if isinstance(data, dict):
+                data = [data]
+
+    elif ext == ".jsonl":
+        data = []
+        with open(file_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    data.append(json.loads(line))
+
+    elif ext == ".csv":
+        data = []
+        with open(file_path, "r", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                data.append(row)
+    else:
+        raise ValueError(f"Unsupported file format: {ext}")
+
+    # ---- Language filtering ----
+    if lang.lower() != "all":
+        # Accept both language codes ("hi") and names ("Hindi")
+        lang_code = None
+        # normalize: if user gives "Hindi", map back to "hi"
+        for code, name in LANGUAGE_MAP.items():
+            if lang.lower() in (code.lower(), name.lower()):
+                lang_code = code
+                break
+
+        if not lang_code:
+            raise ValueError(f"Unsupported language: {lang}")
+
+        filtered_data = []
+        for item in data:
+            item_lang = item.get("language") or item.get("lang")
+            if item_lang and item_lang.lower() == lang_code:
+                filtered_data.append(item)
+        data = filtered_data
+
+    return data
 
 def evaluate(
+    lang: str,
     base_model_path: str,
     adapter_path: str,
     test_data_path: str,
@@ -258,8 +303,8 @@ def evaluate(
     model.eval()
 
     print("Reading examples …")
-    with open(test_data_path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)  # For .json format (list of dicts)
+    data = load_data(test_data_path,lang)  # works for .json, .jsonl, or .csv
+    print(f"Loaded {len(data)} examples")
 
     if max_examples is not None:
         data = data[:max_examples]
@@ -272,14 +317,13 @@ def evaluate(
     for ex in tqdm(data):
         try:
             # Use fields from new format
-            full_input: str = ex["input"]
-            gold_label: str = normalise_label(ex["output"])
-            language = (
-                "ta"  # You may want to extract this if it's embedded in `instruction`
-            )
-
+            claim: str = ex["claim"]
+            gold_label: str = normalise_label(ex["label"])
+            lang_code = ex["language"]
+            evidences = ex["evidences"]
+            language = LANGUAGE_MAP.get(lang_code)
             # prompt = f"##Instruction: {ex['instruction']}\n\n{full_input} \n\nso, the Claim Veracity is: "
-            prompt = f"##Instruction: {ex['instruction']}\n\n##input: {full_input} \n\n##output: "
+            prompt = build_prompt(claim,evidences,lang_code)
 
             enc = tokenizer(
                 prompt,
@@ -305,8 +349,7 @@ def evaluate(
             gold.append(gold_label)
             results_dump.append(
                 {
-                    "instruction": ex["instruction"],
-                    "input": ex["input"],
+                    "input": prompt,
                     "true_label": gold_label,
                     "predicted_label": pred_label,
                     "model_response": decoded,
@@ -362,10 +405,11 @@ def parse_args():
     p.add_argument(
         "--adapter", required=True, help="Path to the LoRA adapter checkpoint"
     )
-    p.add_argument("--data", required=True, help="Path to .jsonl test file")
+    p.add_argument("--data", required=True, help="Path to test file")
     p.add_argument(
         "--out_dir", default="outputs", help="Where to store predictions + metrics"
     )
+    p.add_argument("--language",default="all",help="Specify langauge of test data, e.g. for all langauge give input all for hindi write only hindi etc.")
     p.add_argument(
         "--max_examples",
         type=int,
@@ -384,6 +428,7 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     evaluate(
+        lang = args.language,
         base_model_path=args.base_model,
         adapter_path=args.adapter,
         test_data_path=args.data,
