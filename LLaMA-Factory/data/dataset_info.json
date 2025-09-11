@@ -715,7 +715,17 @@
     },
     "folder": "python"
   },
-  "Xfact_Train_Sentence_Level_Chunked_Retrieved_Evidence": {
-    "file_name": "xfact_train_with_sentence_level_chunked_retrieved_evidence.json"
+  "Xfact_Train_Data_With_Sentence_Level_Chunked_Retrieved_Evidence": {
+    "file_name": "xfact_train_data_with_sentence_level_chunked_retrieved_evidence.json"
+  },
+  "Xfact_Train_Data_With_Semantic_Level_Chunked_Retrieved_Evidence": {
+    "file_name": "xfact_train_data_with_semantic_level_chunked_retrieved_evidence.json"
+  }
+  ,
+  "Xfact_Train_Data_With_Search_Snippet_Evidence": {
+    "file_name": "xfact_train_data_with_search_snippet_evidence.json"
+  },
+  "Xfact_Train_Data_With_Concrete_Evidence": {
+    "file_name": "xfact_train_data_with_concrete_evidence.json"
   }
 }
