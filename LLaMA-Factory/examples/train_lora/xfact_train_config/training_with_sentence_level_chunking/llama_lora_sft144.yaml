@@ -19,14 +19,14 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/llama_8b_xfact_sentence_chunking_evidences/lora/sft
+output_dir: saves/llama_8b_xfact_sentence_chunking_evidences/lora/sft_144
 logging_steps: 10
 save_steps: 500
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: llama_8b_xfact_sentence_chunking_evidences_lora
+run_name: llama_8b_xfact_sentence_chunking_evidences_lora144
 
 ### train
 per_device_train_batch_size: 1
@@ -38,7 +38,7 @@ warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
-
+seed: 144
 
 ### eval
 # eval_dataset: Xfact_Dev_Llama
