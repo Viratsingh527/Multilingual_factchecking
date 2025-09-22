@@ -1,0 +1,11 @@
+                                precision    recall  f1-score   support
+
+                          true     0.7286    0.6201    0.6700       329
+        partly true/misleading     0.4352    0.3316    0.3764       769
+                         false     0.6201    0.7051    0.6599      1109
+complicated/hard-to-categorise     0.8000    0.0533    0.1000       150
+                         other     0.0000    0.0000    0.0000        11
+
+                     micro avg     0.5729    0.5274    0.5493      2368
+                     macro avg     0.5168    0.3420    0.3613      2368
+                  weighted avg     0.5836    0.5274    0.5307      2368
