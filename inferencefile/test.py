@@ -155,6 +155,58 @@ def get_model_shortname(model_path: str) -> str:
     # Split on dash and take first part
     return name.split("-")[0]
 
+def extract_chunking_or_retrieval(path: str):
+    """
+    Extracts the chunking/retrieval technique and random seed from an adapter path.
+    Handles both long names (model_dataset_technique_evidences) and shorter names.
+    """
+
+    # Normalize path to avoid empty basename from trailing slash
+    path = path.rstrip("/")
+
+    # Try to get a random seed from the last directory name
+    last_dir = os.path.basename(path)
+    if "_" in last_dir and last_dir.split("_")[-1].isdigit():
+        random_seed = last_dir.split("_")[-1]
+    else:
+        random_seed = "default"
+
+    # Adapter folder (two levels up: .../<adapter_name>/lora/sft_xxx)
+    adapter_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
+    parts = adapter_name.split("_")
+
+    # If the name follows the expected long format
+    if len(parts) >= 4:
+        technique = "_".join(parts[3:])
+    elif len(parts) >= 2:
+        # Fallback: take the last part(s)
+        technique = "_".join(parts[1:])
+    else:
+        technique = adapter_name
+
+    # Remove trailing "_evidences" if present
+    if technique.endswith("_evidences"):
+        technique = technique.rsplit("_evidences", 1)[0]
+
+    return technique, random_seed
+
+
+def extract_dataset_and_testset(name: str):
+    """
+    Extracts dataset name and testset type from a test data string.
+    
+    Example:
+    >>> extract_dataset_and_testset("xfact_ood_with_sentence_level_chunked_retrieved_evidence")
+    ('xfact', 'ood')
+    """
+    parts = name.split("_")
+    if len(parts) < 2:
+        raise ValueError("Name format not valid. Expected at least 2 parts: dataset and testset")
+    
+    dataset = parts[0]
+    testset = parts[1]
+    
+    return dataset, testset
 
 def build_prompt(claim: str, evidences: List[Dict[str, str]], lang_code: str) -> str:
     """Assemble the full prompt string."""
@@ -377,15 +429,20 @@ def evaluate(
     )
     print(report)
     model_shortname = get_model_shortname(base_model_path)
+    dataset, testset = extract_dataset_and_testset(Path(test_data_path).stem)
+    technique, random_seed = extract_chunking_or_retrieval(adapter_path)
+    if testset == "test":
+        testset = "Indomain"
+    output_dir = Path(output_dir) / f"{dataset}/{testset}/{model_shortname}/{technique}"
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     with open(
-        Path(output_dir) / f"{model_shortname}_predictions_sentence_chunking.json", "w", encoding="utf-8"
+        Path(output_dir) / f"predictions_{random_seed}.json", "w", encoding="utf-8"
     ) as f_pred:
         json.dump(results_dump, f_pred, indent=2, ensure_ascii=False)
 
     with open(
-        Path(output_dir) / f"{model_shortname}_metrics_sentence_chunking.txt", "w", encoding="utf-8"
+        Path(output_dir) / f"metrics__{random_seed}.txt", "w", encoding="utf-8"
     ) as f_met:
         f_met.write(report)
 
