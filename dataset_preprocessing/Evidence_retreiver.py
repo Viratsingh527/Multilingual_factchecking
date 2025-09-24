@@ -178,6 +178,11 @@ def main():
     )
     # I/O
     parser.add_argument(
+        "--dataset",
+        default="xfact",
+        help="Name of dataset.",
+    )
+    parser.add_argument(
         "--input",
         default="train",
         help="Name of input JSONL file that needs to be retrieved.",
@@ -245,7 +250,7 @@ def main():
     args = parser.parse_args()
 
     # ---- Load data ----
-    input_file = INTERIM_DATA_DIR/f"xfact_{args.input}_with_webdata.jsonl"
+    input_file = INTERIM_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_webdata.jsonl"
     datapoints = load_jsonl(input_file)
 
     # ---- Build models once ----
@@ -282,9 +287,9 @@ def main():
 
     # ---- Save ----
     if args.chunker == "sentence":
-        output_file = PROCESSED_DATA_DIR/f"xfact_{args.input}_with_sentence_level_chunked_retrieved_evidence.jsonl"
+        output_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_sentence_level_chunked_retrieved_evidence.jsonl"
     else:
-        output_file = PROCESSED_DATA_DIR/f"xfact_{args.input}_with_semantic_level_chunked_retrieved_evidence.jsonl"
+        output_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_semantic_level_chunked_retrieved_evidence.jsonl"
     save_jsonl(output_file, all_results)
 
     print(f"Done. Wrote {len(all_results)} rows to {output_file}")
