@@ -25,6 +25,49 @@ import nltk
 from transformers import AutoTokenizer
 from langchain.docstore.document import Document
 from multilingual_factchecking.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR,INTERIM_DATA_DIR,DATA_DIR
+import csv
+
+def convert_csv_to_jsonl(path: str):
+    results = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for i, row in enumerate(reader):
+            results.append({
+                "claim": row.get("claim", ""),
+                "label": row.get("label", ""),
+                "language": row.get("language", ""),
+                "evidences": [
+                    {
+                        "source_index": 0,
+                        "source_url": row.get("url", ""),
+                        "evidence": row.get("evidence", "")
+                    }
+                ] if row.get("evidence") else []
+            })
+    return results
+
+def convert_tsv_to_jsonl(path: str):
+    results = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for i, row in enumerate(reader):
+            evidences = []
+            for j in range(1, 6):
+                ev_text = row.get(f"evidence_{j}", "")
+                ev_url = row.get(f"link_{j}", "")
+                if ev_text.strip():
+                    evidences.append({
+                        "source_index": j-1,
+                        "source_url": ev_url,
+                        "evidence": ev_text
+                    })
+            results.append({
+                "claim": row.get("claim", ""),
+                "label": row.get("label", ""),
+                "language": row.get("language", ""),
+                "evidences": evidences
+            })
+    return results
 
 # Some users have a newer NLTK requiring "punkt" and "punkt_tab" for sentencepiece-like tokenizers.
 def _ensure_nltk():
@@ -246,11 +289,47 @@ def main():
         default="Instruct: Given a claim, retrieve relevant evidence from web documents that support or refute the claim",
         help="Instruction prefix for the query.",
     )
+    # In main() argparse section
+    parser.add_argument(
+        "--retriever",
+        dest="retriever",
+        action="store_true",
+        help="Enable evidence retrieval (default: True)."
+    )
+    parser.add_argument(
+        "--no-retriever",
+        dest="retriever",
+        action="store_false",
+        help="Disable evidence retrieval: only convert CSV/TSV into JSONL."
+    )
+    parser.set_defaults(retriever=True)
+    type_of_evidence = "default"
 
     args = parser.parse_args()
+    if args.retriever:
+        # your existing JSONL input with webdata
+        input_file = INTERIM_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_webdata.jsonl"
+    else:
+        # here, input is CSV/TSV file, don’t force .jsonl
+        if args.dataset == "xfact":
+            input_file = input_file = RAW_DATA_DIR/f"{args.dataset}"/f"{args.input}.tsv"
+            type_of_evidence = "search_snippet"
+        elif args.dataset == "ru22fact":
+            input_file = input_file = RAW_DATA_DIR/f"{args.dataset}"/f"{args.input}.csv"
+            type_of_evidence = "llm_generated"
+        input_ext = Path(input_file).suffix.lower()
+        if input_ext == ".csv":
+            all_results = convert_csv_to_jsonl(input_file)
+        elif input_ext == ".tsv":
+            all_results = convert_tsv_to_jsonl(input_file)
+        else:
+            raise ValueError("When --no-retriever is set, input must be CSV or TSV")
+        # save JSONL and exit early
+        output_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_{type_of_evidence}_evidences.jsonl"
+        save_jsonl(output_file, all_results)
+        print(f"Done. Wrote {len(all_results)} rows to {output_file}")
+        return
 
-    # ---- Load data ----
-    input_file = INTERIM_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_webdata.jsonl"
     datapoints = load_jsonl(input_file)
 
     # ---- Build models once ----
