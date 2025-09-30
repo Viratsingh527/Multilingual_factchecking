@@ -19,6 +19,7 @@ from loguru import logger
 
 from multilingual_factchecking.config import RAW_DATA_DIR, INTERIM_DATA_DIR
 
+import asyncio
 
 async def process_claim_with_links(
     claim: str, label: str, language: str, links: List[str], semaphore: asyncio.Semaphore
@@ -32,7 +33,8 @@ async def process_claim_with_links(
         )
         md_generator = DefaultMarkdownGenerator(content_filter=prune_filter)
         run_config = CrawlerRunConfig(
-            markdown_generator=md_generator, cache_mode=CacheMode.BYPASS
+            markdown_generator=md_generator,
+            cache_mode=CacheMode.BYPASS,
         )
 
         valid_urls = [url for url in links if isinstance(url, str) and url.startswith("http")]
@@ -47,9 +49,16 @@ async def process_claim_with_links(
         )
 
         async with AsyncWebCrawler() as crawler:
-            results = await crawler.arun_many(
-                urls=valid_urls, config=run_config, dispatcher=dispatcher
-            )
+            try:
+                # enforce timeout manually
+                results = await asyncio.wait_for(
+                    crawler.arun_many(urls=valid_urls, config=run_config, dispatcher=dispatcher),
+                    timeout=30  # seconds per batch of URLs
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout while crawling URLs for claim: {claim[:60]}...")
+                return claim_data
+
             for result in results:
                 if result.success and result.markdown.fit_markdown:
                     claim_data["sources"].append(
