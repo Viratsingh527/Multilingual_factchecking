@@ -211,6 +211,7 @@ import time
 import argparse
 from tqdm import tqdm
 from deep_translator import GoogleTranslator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # -------------------------------
 # Language Map
@@ -232,106 +233,86 @@ LANG_MAP = {
 }
 
 # -------------------------------
-# Translation Helper (with Retry)
+# Translation Helper with Retry
 # -------------------------------
-def translate_text(text: str, src_lang: str, tgt_lang: str, max_retries: int = 5):
-    """
-    Translate text from src_lang to tgt_lang using GoogleTranslator.
-    Retries with exponential backoff on failure.
-    """
-    for attempt in range(max_retries):
+def translate_text(text: str, src_lang: str, tgt_lang: str, retries: int = 3, delay: float = 5.0):
+    """Translate text from src_lang to tgt_lang using GoogleTranslator with retry."""
+    for attempt in range(1, retries + 1):
         try:
             translated = GoogleTranslator(source=src_lang, target=tgt_lang).translate(text)
-            return translated
+            if translated:
+                return translated
         except Exception as e:
-            wait_time = 2 ** attempt
-            print(f"[Warning] Failed ({attempt+1}/{max_retries}) {src_lang}->{tgt_lang}: {e}")
-            if attempt < max_retries - 1:
-                print(f"Retrying in {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                print(f"[Error] Giving up {src_lang}->{tgt_lang} after {max_retries} retries.")
+            print(f"[Warning] Failed to translate from {src_lang} to {tgt_lang} (attempt {attempt}/{retries}): {e}")
+            if attempt < retries:
+                time.sleep(delay * attempt)
     return None
+
+
+# -------------------------------
+# Evidence Translation Worker
+# -------------------------------
+def translate_evidence_for_all_langs(evidence_text, claim_lang):
+    """Translate one evidence into all target languages using threads."""
+    translated_dict = {"original": evidence_text}
+
+    with ThreadPoolExecutor(max_workers=8) as executor:  # up to 8 parallel translations
+        futures = {}
+        for lang_code in LANG_MAP.keys():
+            if lang_code == claim_lang:
+                continue
+            futures[executor.submit(translate_text, evidence_text, claim_lang, lang_code)] = lang_code
+
+        for future in as_completed(futures):
+            lang_code = futures[future]
+            translated = future.result()
+            if translated:
+                translated_dict[lang_code] = translated
+
+    return translated_dict
 
 
 # -------------------------------
 # Main Dataset Processing
 # -------------------------------
 def process_dataset(input_path: str, output_dir: str):
-    """
-    Translate all evidences in JSONL dataset and save to same filename under output_dir.
-    Also saves a 'missing_translations.jsonl' file for failed translations.
-    """
+    """Translate all evidences in JSONL dataset and save to same filename under output_dir."""
     os.makedirs(output_dir, exist_ok=True)
-
     filename = os.path.basename(input_path)
     output_path = os.path.join(output_dir, filename)
-    missing_path = os.path.join(output_dir, "missing_translations.jsonl")
-
-    print(f"🔹 Processing dataset: {filename}")
-    print(f"🔹 Output file: {output_path}")
-    print(f"🔹 Missing translations file: {missing_path}\n")
+    missing_path = os.path.join(output_dir, filename.replace(".jsonl", "_missing.jsonl"))
 
     with open(input_path, "r", encoding="utf-8") as infile, \
          open(output_path, "w", encoding="utf-8") as outfile, \
-         open(missing_path, "w", encoding="utf-8") as missingfile:
+         open(missing_path, "w", encoding="utf-8") as missing_file:
 
-        for line in tqdm(infile, desc=f"Translating {filename}"):
+        for line in tqdm(infile, desc=f"Processing {filename}"):
             if not line.strip():
                 continue
 
             data = json.loads(line)
             claim_lang = data.get("language")
-            if not claim_lang:
-                print("[Warning] Missing language field; skipping datapoint.")
-                continue
-
             processed_evidences = []
-            missing_entry = {
-                "claim": data.get("claim", ""),
-                "language": claim_lang,
-                "label": data.get("label", ""),
-                "missing_evidences": []
-            }
+            missing_any = False
 
             for ev in data.get("evidences", []):
                 original_text = ev.get("evidence", "")
-                translated_dict = {"original": original_text}
-                failed_langs = []
+                translated_dict = translate_evidence_for_all_langs(original_text, claim_lang)
 
-                for lang_code in LANG_MAP.keys():
-                    if lang_code == claim_lang:
-                        continue
-
-                    translated = translate_text(original_text, src_lang=claim_lang, tgt_lang=lang_code)
-                    if translated:
-                        translated_dict[lang_code] = translated
-                    else:
-                        failed_langs.append(lang_code)
-
-                    # optional small delay to prevent rate limit
-                    time.sleep(0.5)
+                # mark as missing if less than half languages succeeded
+                if len(translated_dict) < len(LANG_MAP) / 2:
+                    missing_any = True
 
                 ev["translated_evidences"] = translated_dict
                 processed_evidences.append(ev)
 
-                if failed_langs:
-                    missing_entry["missing_evidences"].append({
-                        "source_index": ev.get("source_index"),
-                        "source_url": ev.get("source_url"),
-                        "evidence": original_text,
-                        "failed_languages": failed_langs
-                    })
-
             data["evidences"] = processed_evidences
             outfile.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-            if missing_entry["missing_evidences"]:
-                missingfile.write(json.dumps(missing_entry, ensure_ascii=False) + "\n")
+            if missing_any:
+                missing_file.write(json.dumps(data, ensure_ascii=False) + "\n")
 
-    print(f"\n✅ Translation complete.")
-    print(f"   Output saved to: {output_path}")
-    print(f"   Missing translations saved to: {missing_path}")
+    print(f"\n✅ Translation complete.\n  Output: {output_path}\n  Missing translations: {missing_path}")
 
 
 # -------------------------------
@@ -339,7 +320,7 @@ def process_dataset(input_path: str, output_dir: str):
 # -------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Translate multilingual fact-checking dataset with retry and missing-translation logging."
+        description="Multithreaded translation of evidences in multilingual fact-checking JSONL dataset."
     )
     parser.add_argument(
         "--input", "-i", type=str, required=True,
@@ -347,7 +328,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output", "-o", type=str, required=True,
-        help="Directory to save the translated dataset and missing_translations.jsonl."
+        help="Directory to save the translated dataset (filename will be same as input)."
     )
 
     args = parser.parse_args()
