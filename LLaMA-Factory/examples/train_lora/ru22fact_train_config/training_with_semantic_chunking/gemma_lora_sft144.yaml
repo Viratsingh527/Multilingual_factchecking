@@ -37,8 +37,7 @@ lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
-resume_from_checkpoint: null
-seed: 144
+resume_from_checkpoint: /data4/babu/Multilingual_factchecking/LLaMA-Factory/saves/gemma_7b_ru22fact_semantic_chunking_evidences/lora/sft_144/checkpoint-3000
 
 ### eval
 # eval_dataset: Xfact_Dev_Llama
