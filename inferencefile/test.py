@@ -535,12 +535,12 @@ def evaluate(
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     with open(
-        Path(output_dir) / f"predictions_{random_seed}_with_chat_template.json", "w", encoding="utf-8"
+        Path(output_dir) / f"predictions_{random_seed}.json", "w", encoding="utf-8"
     ) as f_pred:
         json.dump(results_dump, f_pred, indent=2, ensure_ascii=False)
 
     with open(
-        Path(output_dir) / f"metrics__{random_seed}_with_chat_template.txt", "w", encoding="utf-8"
+        Path(output_dir) / f"metrics__{random_seed}.txt", "w", encoding="utf-8"
     ) as f_met:
         f_met.write(report)
 
