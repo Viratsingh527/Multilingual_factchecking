@@ -4,7 +4,7 @@
 /data/processed/
 /LLaMA-Factory/data/
 /LLaMA-Factory/saves/
-
+/utils/
 # Mac OS-specific storage files
 .DS_Store
 
