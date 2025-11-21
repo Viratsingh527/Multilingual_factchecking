@@ -27,6 +27,33 @@ from langchain.docstore.document import Document
 from multilingual_factchecking.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, EXTERNAL_DATA_DIR,INTERIM_DATA_DIR,DATA_DIR
 import csv
 
+LANGUAGE_MAP  = {
+    "tr": "Turkish",
+    "ka": "Georgian",
+    "pt": "Portuguese",
+    "id": "Indonesian",
+    "sr": "Serbian",
+    "it": "Italian",
+    "de": "German",
+    "ro": "Romanian",
+    "ta": "Tamil",
+    "pl": "Polish",
+    "hi": "Hindi",
+    "ar": "Arabic",
+    "es": "Spanish",
+    "bn": "Bengali",
+    "fa": "Persian",
+    "gu": "Gujarati",
+    "mr": "Marathi",
+    "pa": "Punjabi",
+    "no": "Norwegian",
+    "si": "Sinhala",
+    "sq": "Albanian",
+    "ru": "Russian",
+    "az": "Azerbaijani",
+    "nl": "Dutch",
+    "fr": "French"
+}
 def convert_csv_to_jsonl(path: str):
     results = []
     with open(path, "r", encoding="utf-8") as f:
@@ -64,7 +91,7 @@ def convert_tsv_to_jsonl(path: str):
             results.append({
                 "claim": row.get("claim", ""),
                 "label": row.get("label", ""),
-                "language": row.get("language", ""),
+                "language": LANGUAGE_MAP.get(row.get("language", ""), "Unknown"),
                 "evidences": evidences
             })
     return results
@@ -325,7 +352,7 @@ def main():
         else:
             raise ValueError("When --no-retriever is set, input must be CSV or TSV")
         # save JSONL and exit early
-        output_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_{type_of_evidence}_evidences.jsonl"
+        output_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"{args.dataset}_{args.input}_with_{type_of_evidence}_evidences.jsonl"
         save_jsonl(output_file, all_results)
         print(f"Done. Wrote {len(all_results)} rows to {output_file}")
         return
