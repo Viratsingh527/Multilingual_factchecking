@@ -170,17 +170,17 @@ def normalise_label(text: str) -> str:
 # Prompt construction
 ###############################################################################
 
-# SYSTEM_PROMPT = (
-#     "You are a multilingual fact‑checking expert. You are given a news claim "
-#     "along with raw evidence related to the claim. Do not consider any other "
-#     "evidence. Your task is to evaluate the veracity of the claim based solely "
-#     "on the provided raw evidence.\n\n"
-#     "Output your answer in exactly the following format:\n"
-#     "Claim Veracity: [label]\n\n"
-#     "Answer with one word: TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, "
-#     "FALSE, MOSTLY‑FALSE, COMPLICATED/HARD‑TO‑CATEGORISE, OTHER."
-#     "Think step by step"
-# )
+SYSTEM_PROMPT = (
+    "You are a multilingual fact‑checking expert. You are given a news claim "
+    "along with raw evidence related to the claim. Do not consider any other "
+    "evidence. Your task is to evaluate the veracity of the claim based solely "
+    "on the provided raw evidence.\n\n"
+    "Output your answer in exactly the following format:\n"
+    "Claim Veracity: [label]\n\n"
+    "Answer with one word: TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, "
+    "FALSE, MOSTLY‑FALSE, COMPLICATED/HARD‑TO‑CATEGORISE, OTHER."
+    
+)
 
 LANGUAGE_MAP  = {
     "tr": "Turkish",
@@ -296,11 +296,14 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
         evidence_blocks = "\n\n".join(
             [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
         )
-
         return (
-            f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
-            f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
+            f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
+            f"Evidences:\n{evidence_blocks} \n\n ##output: "
         )
+        # return (
+        #     f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
+        #     f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
+        # )
 
 ###############################################################################
 # Response cleaning
