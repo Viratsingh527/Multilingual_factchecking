@@ -90,6 +90,8 @@ def extract_dataset_and_testset(name: str):
     
     return dataset, testset
 
+
+
 ###############################################################################
 # Canonical labels & normalisation helpers
 ###############################################################################
@@ -280,8 +282,8 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
         )
 
         return (
-            f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
-            f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
+            f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
+            f"Evidences:\n{evidence_blocks} \n\n ##output: "
         )
     elif dataset == "ru22fact":
         instruction = (
@@ -304,6 +306,38 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
         #     f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
         #     f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
         # )
+
+###############################################################################
+# Build chat template
+###############################################################################
+def build_chat_prompt(tokenizer, claim, evidences, language, dataset):
+    user_prompt = build_prompt(claim, evidences, language, dataset)
+
+    # If no chat template, fallback to plain prompt
+    if not hasattr(tokenizer, "apply_chat_template"):
+        return SYSTEM_PROMPT + "\n\n" + user_prompt
+
+    # Try system+user
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+    try:
+        return tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+    except Exception as e:
+        if "system role" in str(e).lower():
+            # Retry WITHOUT system role
+            messages = [
+                {"role": "user", "content": SYSTEM_PROMPT + "\n\n" + user_prompt}
+            ]
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        else:
+            raise e
+
 
 ###############################################################################
 # Response cleaning
@@ -441,7 +475,7 @@ def evaluate(
                 language = LANGUAGE_MAP.get(lang_code, lang_code)
             elif dataset == "ru22fact":
                 language = lang_code
-            prompt = build_prompt(claim,evidences,language,dataset)
+            prompt = build_chat_prompt(tokenizer, claim, evidences, language, dataset)
 
             enc = tokenizer(
                 prompt,
@@ -501,12 +535,12 @@ def evaluate(
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     with open(
-        Path(output_dir) / f"predictions_{random_seed}.json", "w", encoding="utf-8"
+        Path(output_dir) / f"predictions_{random_seed}_with_chat_template.json", "w", encoding="utf-8"
     ) as f_pred:
         json.dump(results_dump, f_pred, indent=2, ensure_ascii=False)
 
     with open(
-        Path(output_dir) / f"metrics__{random_seed}.txt", "w", encoding="utf-8"
+        Path(output_dir) / f"metrics__{random_seed}_with_chat_template.txt", "w", encoding="utf-8"
     ) as f_met:
         f_met.write(report)
 
