@@ -41,35 +41,100 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ###############################################################################
+# Argument parsing
+###############################################################################
+
+def parse_args():
+    p = argparse.ArgumentParser(description="Evaluate X‑FACT model with LoRA adapter")
+    p.add_argument(
+        "--base_model", required=True, help="HF path / local dir of the base model"
+    )
+    p.add_argument(
+        "--adapter", required=True, help="Path to the LoRA adapter checkpoint"
+    )
+    p.add_argument("--data", required=True, help="Path to test file")
+    p.add_argument(
+        "--out_dir", default="outputs", help="Where to store predictions + metrics"
+    )
+    p.add_argument("--language",default="all",help="Specify langauge of test data, e.g. for all langauge give input all for hindi write only hindi etc.")
+    p.add_argument(
+        "--max_examples",
+        type=int,
+        default=None,
+        help="Optionally evaluate only the first N examples",
+    )
+    p.add_argument(
+        "--max_length",
+        type=int,
+        default=10000,
+        help="length of input sequence to the model (default: 10000)",
+    )
+    return p.parse_args()
+
+args = parse_args()
+
+def extract_dataset_and_testset(name: str):
+    """
+    Extracts dataset name and testset type from a test data string.
+    
+    Example:
+    >>> extract_dataset_and_testset("xfact_ood_with_sentence_level_chunked_retrieved_evidence")
+    ('xfact', 'ood')
+    """
+    parts = name.split("_")
+    if len(parts) < 2:
+        raise ValueError("Name format not valid. Expected at least 2 parts: dataset and testset")
+    
+    dataset = parts[0]
+    testset = parts[1]
+    
+    return dataset, testset
+
+###############################################################################
 # Canonical labels & normalisation helpers
 ###############################################################################
 
-# Canonical order in which we want metrics to be reported
-LABEL_ORDER: List[str] = [
-    "true",
-    "mostly true",
-    "partly true/misleading",
-    "false",
-    "mostly false",
-    "complicated/hard-to-categorise",
-    "other",
-]
-
-# All acceptable surface forms → canonical form
-LABEL_CANONICAL: Dict[str, str] = {
-    "true": "true",
-    "mostly true": "mostly true",
-    "mostly-true": "mostly true",
-    "partly true/misleading": "partly true/misleading",
-    "partly-true/misleading": "partly true/misleading",
-    "false": "false",
-    "mostly false": "mostly false",
-    "mostly-false": "mostly false",
-    "complicated/hard-to-categorise": "complicated/hard-to-categorise",
-    "complicated/hard to categorise": "complicated/hard-to-categorise",
-    "complicated/hard to categorize": "complicated/hard-to-categorise",
-    "other": "other",
+LABEL_SETS = {
+    "xfact": {
+        "order": [
+            "true", "mostly true", "partly true/misleading", "false",
+            "mostly false", "complicated/hard-to-categorise", "other",
+        ],
+        "canonical": {
+            "true": "true",
+            "mostly true": "mostly true",
+            "mostly-true": "mostly true",
+            "partly true/misleading": "partly true/misleading",
+            "partly-true/misleading": "partly true/misleading",
+            "false": "false",
+            "mostly false": "mostly false",
+            "mostly-false": "mostly false",
+            "complicated/hard-to-categorise": "complicated/hard-to-categorise",
+            "complicated/hard to categorise": "complicated/hard-to-categorise",
+            "complicated/hard to categorize": "complicated/hard-to-categorise",
+            "other": "other",
+        },
+    },
+    "ru22fact": {
+        "order": ["supported", "refuted", "nei"],
+        "canonical": {
+            "supported": "supported",
+            "Supported": "supported",
+            "support": "supported",
+            "refuted": "refuted",
+            "Refuted": "refuted",
+            "refute": "refuted",
+            "nei": "nei",
+            "NEI": "nei",
+            "not enough info": "nei",
+        },
+    },
 }
+dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)  
+label_config = LABEL_SETS[dataset_name]
+LABEL_ORDER = label_config["order"]
+LABEL_CANONICAL = label_config["canonical"]
+
 
 # For fuzzy‑matching predictions that are slightly off (e.g. missing spaces)
 
@@ -105,17 +170,17 @@ def normalise_label(text: str) -> str:
 # Prompt construction
 ###############################################################################
 
-# SYSTEM_PROMPT = (
-#     "You are a multilingual fact‑checking expert. You are given a news claim "
-#     "along with raw evidence related to the claim. Do not consider any other "
-#     "evidence. Your task is to evaluate the veracity of the claim based solely "
-#     "on the provided raw evidence.\n\n"
-#     "Output your answer in exactly the following format:\n"
-#     "Claim Veracity: [label]\n\n"
-#     "Answer with one word: TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, "
-#     "FALSE, MOSTLY‑FALSE, COMPLICATED/HARD‑TO‑CATEGORISE, OTHER."
-#     "Think step by step"
-# )
+SYSTEM_PROMPT = (
+    "You are a multilingual fact‑checking expert. You are given a news claim "
+    "along with raw evidence related to the claim. Do not consider any other "
+    "evidence. Your task is to evaluate the veracity of the claim based solely "
+    "on the provided raw evidence.\n\n"
+    "Output your answer in exactly the following format:\n"
+    "Claim Veracity: [label]\n\n"
+    "Answer with one word: TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, "
+    "FALSE, MOSTLY‑FALSE, COMPLICATED/HARD‑TO‑CATEGORISE, OTHER."
+    
+)
 
 LANGUAGE_MAP  = {
     "tr": "Turkish",
@@ -191,52 +256,54 @@ def extract_chunking_or_retrieval(path: str):
     return technique, random_seed
 
 
-def extract_dataset_and_testset(name: str):
-    """
-    Extracts dataset name and testset type from a test data string.
-    
-    Example:
-    >>> extract_dataset_and_testset("xfact_ood_with_sentence_level_chunked_retrieved_evidence")
-    ('xfact', 'ood')
-    """
-    parts = name.split("_")
-    if len(parts) < 2:
-        raise ValueError("Name format not valid. Expected at least 2 parts: dataset and testset")
-    
-    dataset = parts[0]
-    testset = parts[1]
-    
-    return dataset, testset
-
-def build_prompt(claim: str, evidences: List[Dict[str, str]], lang_code: str) -> str:
+def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dataset: str) -> str:
     """Assemble the full prompt string."""
+    if dataset == "xfact":
+        instruction = (
+            f"Classify the given {language} claim into one of the seven categories "
+            "(TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, FALSE, MOSTLY‑FALSE, "
+            "COMPLICATED/HARD‑TO‑CATEGORISE, OTHER) based on the provided evidence."
+            "\n\n1. TRUE: Fully supported by the evidence."
+            "\n2. MOSTLY‑TRUE: Mostly supported but with minor inaccuracies."
+            "\n3. PARTLY‑TRUE/MISLEADING: Partially supported, but includes significant "
+            "omissions or could mislead."
+            "\n4. FALSE: Clearly contradicted or unsupported by the evidence."
+            "\n5. MOSTLY‑FALSE: Largely incorrect with only a small element of truth."
+            "\n6. COMPLICATED/HARD‑TO‑CATEGORISE: Too complex or nuanced to assign a "
+            "straightforward label."
+            "\n7. OTHER: Does not fit into any of the above categories."
+            "\n\nProvide exactly one label."
+        )
 
-    language = LANGUAGE_MAP.get(lang_code)
-    instruction = (
-        f"Classify the given {language} claim into one of the seven categories "
-        "(TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, FALSE, MOSTLY‑FALSE, "
-        "COMPLICATED/HARD‑TO‑CATEGORISE, OTHER) based on the provided evidence."
-        "\n\n1. TRUE: Fully supported by the evidence."
-        "\n2. MOSTLY‑TRUE: Mostly supported but with minor inaccuracies."
-        "\n3. PARTLY‑TRUE/MISLEADING: Partially supported, but includes significant "
-        "omissions or could mislead."
-        "\n4. FALSE: Clearly contradicted or unsupported by the evidence."
-        "\n5. MOSTLY‑FALSE: Largely incorrect with only a small element of truth."
-        "\n6. COMPLICATED/HARD‑TO‑CATEGORISE: Too complex or nuanced to assign a "
-        "straightforward label."
-        "\n7. OTHER: Does not fit into any of the above categories."
-        "\n\nProvide exactly one label."
-    )
+        evidence_blocks = "\n\n".join(
+            [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
+        )
 
-    evidence_blocks = "\n\n".join(
-        [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
-    )
+        return (
+            f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
+            f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
+        )
+    elif dataset == "ru22fact":
+        instruction = (
+            f"Classify the given {language} claim into one of the three categories "
+            "(SUPPORTED, REFUTED, NEI) based on the provided evidence."
+            "\n\n1. SUPPORTED: Fully supported by the evidence."
+            "\n2. REFUTED: Clearly contradicted or unsupported by the evidence."
+            "\n3. NEI: Not enough information to make a decision."
+            "\n\nProvide exactly one label."
+        )
 
-    return (
-        f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
-        f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
-    )
-
+        evidence_blocks = "\n\n".join(
+            [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
+        )
+        return (
+            f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
+            f"Evidences:\n{evidence_blocks} \n\n ##output: "
+        )
+        # return (
+        #     f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
+        #     f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
+        # )
 
 ###############################################################################
 # Response cleaning
@@ -280,7 +347,7 @@ def extract_label(response: str) -> str:
 # Evaluation logic
 ###############################################################################
 
-def load_data(file_path, lang="all"):
+def load_data(file_path, lang="all", dataset="xfact"):
     ext = os.path.splitext(file_path)[-1].lower()
 
     # ---- Load data depending on format ----
@@ -307,25 +374,21 @@ def load_data(file_path, lang="all"):
         raise ValueError(f"Unsupported file format: {ext}")
 
     # ---- Language filtering ----
+
     if lang.lower() != "all":
-        # Accept both language codes ("hi") and names ("Hindi")
-        lang_code = None
-        # normalize: if user gives "Hindi", map back to "hi"
-        for code, name in LANGUAGE_MAP.items():
-            if lang.lower() in (code.lower(), name.lower()):
-                lang_code = code
-                break
-
-        if not lang_code:
-            raise ValueError(f"Unsupported language: {lang}")
-
-        filtered_data = []
+        filtered = []
         for item in data:
             item_lang = item.get("language") or item.get("lang")
-            if item_lang and item_lang.lower() == lang_code:
-                filtered_data.append(item)
-        data = filtered_data
+            if not item_lang:
+                continue
 
+            if dataset == "xfact":  # language codes
+                if item_lang.lower() == lang.lower() or LANGUAGE_MAP.get(item_lang.lower(), "").lower() == lang.lower():
+                    filtered.append(item)
+            elif dataset == "ru22fact":  # full names
+                if item_lang.strip().lower() == lang.lower():
+                    filtered.append(item)
+        data = filtered
     return data
 
 def evaluate(
@@ -364,8 +427,9 @@ def evaluate(
     print(f"→ Evaluating on {len(data)} examples\n")
 
     predictions, gold = [], []
-    results_dump = []
-
+    results_dump = []  
+    model_shortname = get_model_shortname(base_model_path)
+    dataset, testset = extract_dataset_and_testset(Path(test_data_path).stem)
     for ex in tqdm(data):
         try:
             # Use fields from new format
@@ -373,9 +437,11 @@ def evaluate(
             gold_label: str = normalise_label(ex["label"])
             lang_code = ex["language"]
             evidences = ex["evidences"]
-            language = LANGUAGE_MAP.get(lang_code)
-            # prompt = f"##Instruction: {ex['instruction']}\n\n{full_input} \n\nso, the Claim Veracity is: "
-            prompt = build_prompt(claim,evidences,lang_code)
+            if dataset == "xfact":
+                language = LANGUAGE_MAP.get(lang_code, lang_code)
+            elif dataset == "ru22fact":
+                language = lang_code
+            prompt = build_prompt(claim,evidences,language,dataset)
 
             enc = tokenizer(
                 prompt,
@@ -428,8 +494,6 @@ def evaluate(
         gold, predictions, labels=filtered_labels, zero_division=0,digits=4
     )
     print(report)
-    model_shortname = get_model_shortname(base_model_path)
-    dataset, testset = extract_dataset_and_testset(Path(test_data_path).stem)
     technique, random_seed = extract_chunking_or_retrieval(adapter_path)
     if testset == "test":
         testset = "Indomain"
@@ -454,36 +518,7 @@ def evaluate(
 ###############################################################################
 
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Evaluate X‑FACT model with LoRA adapter")
-    p.add_argument(
-        "--base_model", required=True, help="HF path / local dir of the base model"
-    )
-    p.add_argument(
-        "--adapter", required=True, help="Path to the LoRA adapter checkpoint"
-    )
-    p.add_argument("--data", required=True, help="Path to test file")
-    p.add_argument(
-        "--out_dir", default="outputs", help="Where to store predictions + metrics"
-    )
-    p.add_argument("--language",default="all",help="Specify langauge of test data, e.g. for all langauge give input all for hindi write only hindi etc.")
-    p.add_argument(
-        "--max_examples",
-        type=int,
-        default=None,
-        help="Optionally evaluate only the first N examples",
-    )
-    p.add_argument(
-        "--max_length",
-        type=int,
-        default=10000,
-        help="length of input sequence to the model (default: 10000)",
-    )
-    return p.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_args()
     evaluate(
         lang = args.language,
         base_model_path=args.base_model,
