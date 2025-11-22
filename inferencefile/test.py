@@ -172,17 +172,6 @@ def normalise_label(text: str) -> str:
 # Prompt construction
 ###############################################################################
 
-SYSTEM_PROMPT = (
-    "You are a multilingual fact‑checking expert. You are given a news claim "
-    "along with raw evidence related to the claim. Do not consider any other "
-    "evidence. Your task is to evaluate the veracity of the claim based solely "
-    "on the provided raw evidence.\n\n"
-    "Output your answer in exactly the following format:\n"
-    "Claim Veracity: [label]\n\n"
-    "Answer with one word: TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, "
-    "FALSE, MOSTLY‑FALSE, COMPLICATED/HARD‑TO‑CATEGORISE, OTHER."
-    
-)
 
 LANGUAGE_MAP  = {
     "tr": "Turkish",
@@ -258,6 +247,12 @@ def extract_chunking_or_retrieval(path: str):
     return technique, random_seed
 
 
+SYSTEM_PROMPT = {
+    "xfact": "You are a multilingual fact-checking expert. You are given a news claim along with raw evidence related to the claim. Do not consider any other evidence. Your task is to evaluate the veracity of the claim based solely on the provided raw evidence.\n\n Output your answer in exactly the following format:\n Claim Veracity: [label]\n\n Answer with one word: TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, COMPLICATED/HARD-TO-CATEGORISE, OTHER.",
+    "ru22fact": "You are a multilingual fact-checking expert. You are given a news claim along with raw evidence related to the claim. Do not consider any other evidence. Your task is to evaluate the veracity of the claim based solely on the provided raw evidence.\n\n Output your answer in exactly the following format:\n Claim Veracity: [label]\n\n Answer with one word: SUPPORTED, REFUTED, NEI"
+}
+
+
 def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dataset: str) -> str:
     """Assemble the full prompt string."""
     if dataset == "xfact":
@@ -302,10 +297,7 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
             f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
             f"Evidences:\n{evidence_blocks} \n\n ##output: "
         )
-        # return (
-        #     f"##Instruction: {instruction}\n\nClaim: {claim}\n\n"
-        #     f"Evidences:\n{evidence_blocks} \n\n so, the Claim Veracity is: "
-        # )
+
 
 ###############################################################################
 # Build chat template
@@ -313,30 +305,34 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
 def build_chat_prompt(tokenizer, claim, evidences, language, dataset):
     user_prompt = build_prompt(claim, evidences, language, dataset)
 
-    # If no chat template, fallback to plain prompt
-    if not hasattr(tokenizer, "apply_chat_template"):
-        return SYSTEM_PROMPT + "\n\n" + user_prompt
+    # Select system prompt
+    system_prompt = SYSTEM_PROMPT["xfact"] if dataset == "xfact" else SYSTEM_PROMPT["ru22fact"]
 
-    # Try system+user
+    # Fallback for non-chat-tokenizers
+    if not hasattr(tokenizer, "apply_chat_template"):
+        return system_prompt + "\n\n" + user_prompt
+
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
     try:
         return tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
     except Exception as e:
-        if "system role" in str(e).lower():
-            # Retry WITHOUT system role
+        # Retry without system role (for models that do not support it)
+        if any(x in str(e).lower() for x in ["system", "unknown role"]):
             messages = [
-                {"role": "user", "content": SYSTEM_PROMPT + "\n\n" + user_prompt}
+                {"role": "user", "content": system_prompt + "\n\n" + user_prompt}
             ]
             return tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
         else:
             raise e
+
 
 
 ###############################################################################
