@@ -1,9 +1,9 @@
               precision    recall  f1-score   support
 
-   supported     0.9847    0.9510    0.9676      2164
-     refuted     0.9466    0.9067    0.9262       900
-         nei     0.3462    0.6081    0.4412       148
+   supported     0.9826    0.9644    0.9734      2164
+     refuted     0.9212    0.9356    0.9283       900
+         nei     0.4138    0.4865    0.4472       148
 
-    accuracy                         0.9228      3212
-   macro avg     0.7592    0.8219    0.7783      3212
-weighted avg     0.9446    0.9228    0.9317      3212
+    accuracy                         0.9343      3212
+   macro avg     0.7725    0.7955    0.7830      3212
+weighted avg     0.9392    0.9343    0.9365      3212
