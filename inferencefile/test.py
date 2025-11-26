@@ -1,28 +1,21 @@
 # test_fixed.py
-"""A cleaned‑up evaluation script for X‑FACT multilingual fact‑checking.
+"""A cleaned-up evaluation script for X-FACT multilingual fact-checking.
 
 Key fixes
 ---------
-1. **Canonical label handling** – All possible spelling / hyphen variations are
-   mapped to a single canonical label so both gold labels and predictions are
-   evaluated consistently.
-2. **Consistent label list** – `LABEL_ORDER` is used everywhere (prompt
-   cleaning, metrics) so we never accidentally drop a class in the report.
-3. **Utility functions re‑organised** – Helpers for prompt construction and
-   label normalisation live at the top of the file for clarity.
-4. **Evaluation over the full dev/test set** – The artificial 50‑example slice
-   has been removed; evaluate on the whole file unless the caller passes a
-   smaller `--max_examples` flag.
+1. Canonical label handling
+2. Consistent label list
+3. Utility functions cleaned
+4. Full dataset evaluation
+5. Cross-lingual evidence evaluation when lang != 'all'
 
 Usage
 -----
-```
 python test_fixed.py \
   --base_model meta-llama/Llama-3.1-8B-Instruct \
   --adapter saves/llama3-8b_llama_webreteived_evidences/lora/sft \
   --data test_xfact.jsonl \
   --out_dir outputs/xfact_predictions/llama3_lora
-```
 """
 from __future__ import annotations
 import unicodedata
@@ -45,55 +38,26 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 ###############################################################################
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Evaluate X‑FACT model with LoRA adapter")
-    p.add_argument(
-        "--base_model", required=True, help="HF path / local dir of the base model"
-    )
-    p.add_argument(
-        "--adapter", required=True, help="Path to the LoRA adapter checkpoint"
-    )
-    p.add_argument("--data", required=True, help="Path to test file")
-    p.add_argument(
-        "--out_dir", default="outputs", help="Where to store predictions + metrics"
-    )
-    p.add_argument("--language",default="all",help="Specify langauge of test data, e.g. for all langauge give input all for hindi write only hindi etc.")
-    p.add_argument(
-        "--max_examples",
-        type=int,
-        default=None,
-        help="Optionally evaluate only the first N examples",
-    )
-    p.add_argument(
-        "--max_length",
-        type=int,
-        default=10000,
-        help="length of input sequence to the model (default: 10000)",
-    )
+    p = argparse.ArgumentParser(description="Evaluate Finetuned model with LoRA adapter")
+    p.add_argument("--base_model", required=True)
+    p.add_argument("--adapter", required=True)
+    p.add_argument("--data", required=True)
+    p.add_argument("--out_dir", default="outputs")
+    p.add_argument("--language", default="all")
+    p.add_argument("--max_examples", type=int, default=None)
+    p.add_argument("--max_length", type=int, default=10000)
     return p.parse_args()
 
 args = parse_args()
 
 def extract_dataset_and_testset(name: str):
-    """
-    Extracts dataset name and testset type from a test data string.
-    
-    Example:
-    >>> extract_dataset_and_testset("xfact_ood_with_sentence_level_chunked_retrieved_evidence")
-    ('xfact', 'ood')
-    """
     parts = name.split("_")
     if len(parts) < 2:
-        raise ValueError("Name format not valid. Expected at least 2 parts: dataset and testset")
-    
-    dataset = parts[0]
-    testset = parts[1]
-    
-    return dataset, testset
-
-
+        raise ValueError("Filename must contain dataset and testset")
+    return parts[0], parts[1]
 
 ###############################################################################
-# Canonical labels & normalisation helpers
+# Canonical labels
 ###############################################################################
 
 LABEL_SETS = {
@@ -121,194 +85,119 @@ LABEL_SETS = {
         "order": ["supported", "refuted", "nei"],
         "canonical": {
             "supported": "supported",
-            "Supported": "supported",
             "support": "supported",
             "refuted": "refuted",
-            "Refuted": "refuted",
             "refute": "refuted",
             "nei": "nei",
-            "NEI": "nei",
             "not enough info": "nei",
         },
     },
 }
-dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)  
+
+dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)
 label_config = LABEL_SETS[dataset_name]
 LABEL_ORDER = label_config["order"]
 LABEL_CANONICAL = label_config["canonical"]
 
-
-# For fuzzy‑matching predictions that are slightly off (e.g. missing spaces)
-
-LABEL_SET_LOWER = set(LABEL_CANONICAL.keys())  # for fuzzy matching
-
+LABEL_SET_LOWER = set(LABEL_CANONICAL.keys())
 _DASH_CHARS = re.compile(r"[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D\u002D]")
 
-
 def _standardise_dashes(text: str) -> str:
-    """Replace *any* Unicode dash with simple ASCII hyphen (-)."""
     return _DASH_CHARS.sub("-", text)
 
-
 def normalise_label(text: str) -> str:
-    """Lower‑cases, ASCII‑hyphenises, then maps to canonical form."""
     if not text:
         return "other"
-
-    # 1) Unicode normalisation + dash folding
     cleaned = _standardise_dashes(unicodedata.normalize("NFKC", text))
-    cleaned = re.sub(r"\s+", " ", cleaned)  # collapse whitespace
-    cleaned = cleaned.strip().lower()
-
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().lower()
     if cleaned in LABEL_CANONICAL:
         return LABEL_CANONICAL[cleaned]
-
-    # fuzzy backup
     match = get_close_matches(cleaned, LABEL_SET_LOWER, n=1, cutoff=0.7)
     return LABEL_CANONICAL[match[0]] if match else "other"
-
 
 ###############################################################################
 # Prompt construction
 ###############################################################################
 
-
-LANGUAGE_MAP  = {
-    "tr": "Turkish",
-    "ka": "Georgian",
-    "pt": "Portuguese",
-    "id": "Indonesian",
-    "sr": "Serbian",
-    "it": "Italian",
-    "de": "German",
-    "ro": "Romanian",
-    "ta": "Tamil",
-    "pl": "Polish",
-    "hi": "Hindi",
-    "ar": "Arabic",
-    "es": "Spanish",
-    "bn": "Bengali",
-    "fa": "Persian",
-    "gu": "Gujarati",
-    "mr": "Marathi",
-    "pa": "Punjabi",
-    "no": "Norwegian",
-    "si": "Sinhala",
-    "sq": "Albanian",
-    "ru": "Russian",
-    "az": "Azerbaijani",
-    "nl": "Dutch",
-    "fr": "French"
+LANGUAGE_MAP = {
+    "tr": "Turkish", "ka": "Georgian", "pt": "Portuguese", "id": "Indonesian",
+    "sr": "Serbian", "it": "Italian", "de": "German", "ro": "Romanian",
+    "ta": "Tamil", "pl": "Polish", "hi": "Hindi", "ar": "Arabic", "es": "Spanish",
+    "bn": "Bengali", "fa": "Persian", "gu": "Gujarati", "mr": "Marathi",
+    "pa": "Punjabi", "no": "Norwegian", "si": "Sinhala", "sq": "Albanian",
+    "ru": "Russian", "az": "Azerbaijani", "nl": "Dutch", "fr": "French"
 }
 
+FIXED_EVIDENCE_LANGS = [
+    "tr","ka","pt","id","sr","it","de","ro","ta","pl","hi","ar","es"
+]
+
 def get_model_shortname(model_path: str) -> str:
-    """
-    Given a model path like 'meta-llama/Llama-3.1-8B-Instruct',
-    return a short identifier like 'llama'.
-    """
-    # Take last part of path (e.g. 'Llama-3.1-8B-Instruct')
     name = Path(model_path).name.lower()
-    # Split on dash and take first part
     return name.split("-")[0]
 
 def extract_chunking_or_retrieval(path: str):
-    """
-    Extracts the chunking/retrieval technique and random seed from an adapter path.
-    Handles both long names (model_dataset_technique_evidences) and shorter names.
-    """
-
-    # Normalize path to avoid empty basename from trailing slash
     path = path.rstrip("/")
-
-    # Try to get a random seed from the last directory name
     last_dir = os.path.basename(path)
+
     if "_" in last_dir and last_dir.split("_")[-1].isdigit():
         random_seed = last_dir.split("_")[-1]
     else:
         random_seed = "default"
 
-    # Adapter folder (two levels up: .../<adapter_name>/lora/sft_xxx)
     adapter_name = os.path.basename(os.path.dirname(os.path.dirname(path)))
     parts = adapter_name.split("_")
 
-    # If the name follows the expected long format
     if len(parts) >= 4:
         technique = "_".join(parts[3:])
     elif len(parts) >= 2:
-        # Fallback: take the last part(s)
         technique = "_".join(parts[1:])
     else:
         technique = adapter_name
 
-    # Remove trailing "_evidences" if present
     if technique.endswith("_evidences"):
         technique = technique.rsplit("_evidences", 1)[0]
-
     return technique, random_seed
 
-
 SYSTEM_PROMPT = {
-    "xfact": "You are a multilingual fact-checking expert. You are given a news claim along with raw evidence related to the claim. Do not consider any other evidence. Your task is to evaluate the veracity of the claim based solely on the provided raw evidence.\n\n Output your answer in exactly the following format:\n Claim Veracity: [label]\n\n Answer with one word: TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, COMPLICATED/HARD-TO-CATEGORISE, OTHER.",
-    "ru22fact": "You are a multilingual fact-checking expert. You are given a news claim along with raw evidence related to the claim. Do not consider any other evidence. Your task is to evaluate the veracity of the claim based solely on the provided raw evidence.\n\n Output your answer in exactly the following format:\n Claim Veracity: [label]\n\n Answer with one word: SUPPORTED, REFUTED, NEI"
+    "xfact":
+        "You are a multilingual fact-checking expert. You are given a news claim along with raw evidence. "
+        "Your task is to classify the veracity strictly based on provided evidence.\n\n"
+        "Output format:\nClaim Veracity: [label]\n\n"
+        "Labels: TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
+        "COMPLICATED/HARD-TO-CATEGORISE, OTHER.",
+    "ru22fact":
+        "You are a multilingual fact-checking expert. Classify the claim into: SUPPORTED, REFUTED, NEI.\n\n"
+        "Output format:\nClaim Veracity: [label]"
 }
 
-
 def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dataset: str) -> str:
-    """Assemble the full prompt string."""
     if dataset == "xfact":
         instruction = (
-            f"Classify the given {language} claim into one of the seven categories "
-            "(TRUE, MOSTLY‑TRUE, PARTLY‑TRUE/MISLEADING, FALSE, MOSTLY‑FALSE, "
-            "COMPLICATED/HARD‑TO‑CATEGORISE, OTHER) based on the provided evidence."
-            "\n\n1. TRUE: Fully supported by the evidence."
-            "\n2. MOSTLY‑TRUE: Mostly supported but with minor inaccuracies."
-            "\n3. PARTLY‑TRUE/MISLEADING: Partially supported, but includes significant "
-            "omissions or could mislead."
-            "\n4. FALSE: Clearly contradicted or unsupported by the evidence."
-            "\n5. MOSTLY‑FALSE: Largely incorrect with only a small element of truth."
-            "\n6. COMPLICATED/HARD‑TO‑CATEGORISE: Too complex or nuanced to assign a "
-            "straightforward label."
-            "\n7. OTHER: Does not fit into any of the above categories."
-            "\n\nProvide exactly one label."
+            f"Classify the given {language} claim into seven categories: "
+            "TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
+            "COMPLICATED/HARD-TO-CATEGORISE, OTHER.\nProvide exactly one label."
         )
-
-        evidence_blocks = "\n\n".join(
-            [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
-        )
-
-        return (
-            f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
-            f"Evidences:\n{evidence_blocks} \n\n ##output: "
-        )
-    elif dataset == "ru22fact":
+    else:
         instruction = (
-            f"Classify the given {language} claim into one of the three categories "
-            "(SUPPORTED, REFUTED, NEI) based on the provided evidence."
-            "\n\n1. SUPPORTED: Fully supported by the evidence."
-            "\n2. REFUTED: Clearly contradicted or unsupported by the evidence."
-            "\n3. NEI: Not enough information to make a decision."
-            "\n\nProvide exactly one label."
+            f"Classify the given {language} claim into: SUPPORTED, REFUTED, NEI.\nProvide exactly one label."
         )
 
-        evidence_blocks = "\n\n".join(
-            [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
-        )
-        return (
-            f"##Instruction: {instruction}\n\n##input: Claim: {claim}\n\n"
-            f"Evidences:\n{evidence_blocks} \n\n ##output: "
-        )
+    evidence_blocks = "\n\n".join(
+        [f"Evidence_{1+i}: {ev['evidence']}" for i, ev in enumerate(evidences)]
+    )
 
+    return (
+        f"##Instruction: {instruction}\n\n"
+        f"##input: Claim: {claim}\n\n"
+        f"Evidences:\n{evidence_blocks}\n\n"
+        "##output: "
+    )
 
-###############################################################################
-# Build chat template
-###############################################################################
 def build_chat_prompt(tokenizer, claim, evidences, language, dataset):
     user_prompt = build_prompt(claim, evidences, language, dataset)
+    system_prompt = SYSTEM_PROMPT[dataset]
 
-    # Select system prompt
-    system_prompt = SYSTEM_PROMPT["xfact"] if dataset == "xfact" else SYSTEM_PROMPT["ru22fact"]
-
-    # Fallback for non-chat-tokenizers
     if not hasattr(tokenizer, "apply_chat_template"):
         return system_prompt + "\n\n" + user_prompt
 
@@ -316,35 +205,24 @@ def build_chat_prompt(tokenizer, claim, evidences, language, dataset):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-
     try:
         return tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-    except Exception as e:
-        # Retry without system role (for models that do not support it)
-        if any(x in str(e).lower() for x in ["system", "unknown role"]):
-            messages = [
-                {"role": "user", "content": system_prompt + "\n\n" + user_prompt}
-            ]
-            return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-        else:
-            raise e
-
-
+    except:
+        messages = [{"role": "user", "content": system_prompt + "\n\n" + user_prompt}]
+        return tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
 ###############################################################################
 # Response cleaning
 ###############################################################################
 
-# Regex caches (compiled once)
 STRUCTURED_RE = re.compile(
-    r"(claim veracity|verdict|label|prediction)\s*:\s*([^\n]+)",
-    re.I,
+    r"(claim veracity|verdict|label|prediction)\s*:\s*([^\n]+)", re.I
 )
-# Build a regex with *any* dash variant folded to ASCII ‘-’ beforehand.
+
 LABEL_PATTERN_RE = re.compile(
     r"\b("
     + "|".join(map(re.escape, [_standardise_dashes(l) for l in LABEL_SET_LOWER]))
@@ -352,74 +230,60 @@ LABEL_PATTERN_RE = re.compile(
     re.I,
 )
 
-
 def extract_label(response: str) -> str:
     if not response:
         return "other"
-
-    resp_std = _standardise_dashes(response)  # fold dashes once
-
-    # 1) "Claim Veracity: …" pattern
+    resp_std = _standardise_dashes(response)
     m = STRUCTURED_RE.search(resp_std)
     if m:
         return normalise_label(m.group(2))
-
-    # 2) First token matching any label surface form
     m2 = LABEL_PATTERN_RE.search(resp_std)
     if m2:
         return normalise_label(m2.group(0))
-
-    # 3) fallback fuzzy
     return normalise_label(resp_std)
 
-
 ###############################################################################
-# Evaluation logic
+# Data loading
 ###############################################################################
 
 def load_data(file_path, lang="all", dataset="xfact"):
-    ext = os.path.splitext(file_path)[-1].lower()
+    ext = os.path.splitext(file_path)[1].lower()
 
-    # ---- Load data depending on format ----
     if ext == ".json":
-        with open(file_path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
             if isinstance(data, dict):
                 data = [data]
-
     elif ext == ".jsonl":
         data = []
-        with open(file_path, "r", encoding="utf-8") as fh:
-            for line in fh:
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
                 if line.strip():
                     data.append(json.loads(line))
-
     elif ext == ".csv":
         data = []
-        with open(file_path, "r", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            for row in reader:
-                data.append(row)
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                data.append(r)
     else:
-        raise ValueError(f"Unsupported file format: {ext}")
+        raise ValueError(f"Unsupported format: {ext}")
 
-    # ---- Language filtering ----
-
+    # ---- Filter claims only if lang != all ----
     if lang.lower() != "all":
         filtered = []
-        for item in data:
-            item_lang = item.get("language") or item.get("lang")
-            if not item_lang:
-                continue
-
-            if dataset == "xfact":  # language codes
-                if item_lang.lower() == lang.lower() or LANGUAGE_MAP.get(item_lang.lower(), "").lower() == lang.lower():
-                    filtered.append(item)
-            elif dataset == "ru22fact":  # full names
-                if item_lang.strip().lower() == lang.lower():
-                    filtered.append(item)
+        for ex in data:
+            ex_lang = ex.get("language")
+            if ex_lang and ex_lang.lower() == lang.lower():
+                filtered.append(ex)
         data = filtered
+
     return data
+
+
+###############################################################################
+# Evaluation logic (UPDATED)
+###############################################################################
 
 def evaluate(
     lang: str,
@@ -430,7 +294,6 @@ def evaluate(
     max_examples: Optional[int] = None,
     max_length: int = 10000,
 ):
-    """Run inference + classification report on dataset with 'instruction', 'input', and 'output' fields."""
 
     tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
@@ -448,7 +311,7 @@ def evaluate(
     model.eval()
 
     print("Reading examples …")
-    data = load_data(test_data_path,lang)  # works for .json, .jsonl, or .csv
+    data = load_data(test_data_path, lang)
     print(f"Loaded {len(data)} examples")
 
     if max_examples is not None:
@@ -456,101 +319,212 @@ def evaluate(
 
     print(f"→ Evaluating on {len(data)} examples\n")
 
-    predictions, gold = [], []
-    results_dump = []  
     model_shortname = get_model_shortname(base_model_path)
     dataset, testset = extract_dataset_and_testset(Path(test_data_path).stem)
-    for ex in tqdm(data):
-        try:
-            # Use fields from new format
-            claim: str = ex["claim"]
-            gold_label: str = normalise_label(ex["label"])
-            lang_code = ex["language"]
-            evidences = ex["evidences"]
-            if dataset == "xfact":
+    if testset == "test":
+        testset = "Indomain"
+
+    technique, random_seed = extract_chunking_or_retrieval(adapter_path)
+
+    #######################################################################
+    # MODE 1 — Normal evaluation when lang == all
+    #######################################################################
+    if lang.lower() == "all":
+        print("[Mode] Normal evaluation (lang == all). No cross-evidence looping.")
+
+        predictions, gold, results_dump = [], [], []
+        for ex in tqdm(data):
+
+            try:
+                claim = ex["claim"]
+                gold_label = normalise_label(ex["label"])
+                lang_code = ex["language"]
+                evidences = ex["evidences"]
+
                 language = LANGUAGE_MAP.get(lang_code, lang_code)
-            elif dataset == "ru22fact":
-                language = lang_code
-            prompt = build_chat_prompt(tokenizer, claim, evidences, language, dataset)
+                prompt = build_chat_prompt(tokenizer, claim, evidences, language, dataset)
 
-            enc = tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=max_length,
-            ).to(model.device)
+                enc = tokenizer(
+                    prompt,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                ).to(model.device)
 
-            out = model.generate(
-                **enc,
-                max_new_tokens=10,
-                temperature=0.0,
-                do_sample=False,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+                out = model.generate(
+                    **enc,
+                    max_new_tokens=10,
+                    temperature=0.0,
+                    do_sample=False,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
 
-            decoded = tokenizer.decode(
-                out[0][enc.input_ids.shape[1] :], skip_special_tokens=True
-            )
-            pred_label = extract_label(decoded)
+                decoded = tokenizer.decode(
+                    out[0][enc.input_ids.shape[1]:],
+                    skip_special_tokens=True
+                )
 
-            predictions.append(pred_label)
-            gold.append(gold_label)
-            results_dump.append(
-                {
+                pred_label = extract_label(decoded)
+
+                predictions.append(pred_label)
+                gold.append(gold_label)
+                results_dump.append({
                     "input": prompt,
                     "true_label": gold_label,
                     "predicted_label": pred_label,
                     "model_response": decoded,
                     "language": language,
-                }
-            )
+                })
 
-        except Exception as exc:
-            print(f"[!] Error on example → {exc}")
-            predictions.append("other")
-            gold.append("other")
+            except Exception as exc:
+                print(f"[!] Error → {exc}")
+                predictions.append("other")
+                gold.append("other")
 
-    from collections import Counter
+        # Normal directory (no language folder)
+        out_dir_full = Path(output_dir) / f"{dataset}/{testset}/{model_shortname}/{technique}"
+        out_dir_full.mkdir(parents=True, exist_ok=True)
 
-    print("\nClassification report (canonical labels):")
-    gold_counts = Counter(gold)
-    filtered_labels = [label for label in LABEL_ORDER if gold_counts[label] > 0]
+        # Save predictions
+        with open(out_dir_full / f"predictions_{random_seed}.json", "w", encoding="utf-8") as f:
+            json.dump(results_dump, f, indent=2, ensure_ascii=False)
 
-    print("Label counts:")
-    for label in LABEL_ORDER:
-        print(f"{label:35s}  true: {gold_counts.get(label, 0):4d}")
+        # Save metrics
+        from collections import Counter
+        gold_counts = Counter(gold)
+        filtered_labels = [l for l in LABEL_ORDER if gold_counts[l] > 0]
 
-    report = classification_report(
-        gold, predictions, labels=filtered_labels, zero_division=0,digits=4
-    )
-    print(report)
-    technique, random_seed = extract_chunking_or_retrieval(adapter_path)
-    if testset == "test":
-        testset = "Indomain"
-    output_dir = Path(output_dir) / f"{dataset}/{testset}/{model_shortname}/{technique}"
+        report = classification_report(
+            gold, predictions,
+            labels=filtered_labels,
+            zero_division=0,
+            digits=4
+        )
 
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    with open(
-        Path(output_dir) / f"predictions_{random_seed}.json", "w", encoding="utf-8"
-    ) as f_pred:
-        json.dump(results_dump, f_pred, indent=2, ensure_ascii=False)
+        with open(out_dir_full / f"metrics__{random_seed}.txt", "w", encoding="utf-8") as f:
+            f.write(report)
 
-    with open(
-        Path(output_dir) / f"metrics__{random_seed}.txt", "w", encoding="utf-8"
-    ) as f_met:
-        f_met.write(report)
+        print(f"\nSaved → {out_dir_full}")
+        return  # END MODE 1
 
-    print(f"\nSaved predictions & report to → {output_dir}")
+    #######################################################################
+    # MODE 2 — Cross-lingual evidence evaluation when lang != all
+    #######################################################################
+    print("[Mode] Cross-lingual evaluation (lang != all).")
+    claim_lang = lang.lower()
 
+    # Output directory includes claim language folder
+    base_out_dir = Path(output_dir) / f"{dataset}/{testset}/{model_shortname}/{technique}/{claim_lang}"
+    base_out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Sequential evaluation over 13 evidence languages
+    for evidence_lang in FIXED_EVIDENCE_LANGS:
+
+        print(f"\n=== Evaluating CLAIM={claim_lang} | EVIDENCE={evidence_lang} ===")
+        if evidence_lang == claim_lang:
+            evidence_lang = "original"
+        gold, predictions, results_dump = [], [], []
+
+        for ex in tqdm(data, desc=f"Eval {claim_lang}-{evidence_lang}"):
+
+            try:
+                claim = ex["claim"]
+                gold_label = normalise_label(ex["label"])
+
+                # Extract translated evidences for this evidence language
+                translated_list = []
+                for ev in ex["evidences"]:
+                    translated_text = ev["translated_evidences"][evidence_lang]
+                    translated_list.append({"evidence": translated_text})
+
+                # Build correct prompt
+                claim_language_name = LANGUAGE_MAP.get(claim_lang, claim_lang)
+                evidence_language_name = LANGUAGE_MAP.get(evidence_lang, evidence_lang)
+
+                prompt = build_chat_prompt(
+                    tokenizer,
+                    claim,
+                    translated_list,
+                    claim_language_name,
+                    dataset
+                )
+
+                enc = tokenizer(
+                    prompt,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_length,
+                ).to(model.device)
+
+                out = model.generate(
+                    **enc,
+                    max_new_tokens=10,
+                    temperature=0.0,
+                    do_sample=False,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+
+                decoded = tokenizer.decode(
+                    out[0][enc.input_ids.shape[1]:],
+                    skip_special_tokens=True
+                )
+
+                pred_label = extract_label(decoded)
+
+                predictions.append(pred_label)
+                gold.append(gold_label)
+
+                results_dump.append({
+                    "claim_language": claim_language_name,
+                    "evidence_language": evidence_language_name,
+                    "prompt": prompt,
+                    "true_label": gold_label,
+                    "predicted_label": pred_label,
+                    "model_response": decoded,
+                })
+
+            except Exception as exc:
+                print(f"[!] Error → {exc}")
+                predictions.append("other")
+                gold.append("other")
+
+        # ---- SAVE RESULTS FOR THIS LANGUAGE PAIR ----
+
+        out_dir_full = base_out_dir
+        out_dir_full.mkdir(parents=True, exist_ok=True)
+
+        preds_file = out_dir_full / f"predictions_{claim_lang}_{evidence_lang}.jsonl"
+        metrics_file = out_dir_full / f"metrics_{claim_lang}_{evidence_lang}.txt"
+
+        # Save predictions JSONL
+        with open(preds_file, "w", encoding="utf-8") as fp:
+            for row in results_dump:
+                fp.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        # Save classification report
+        from collections import Counter
+        gold_counts = Counter(gold)
+        filtered_labels = [l for l in LABEL_ORDER if gold_counts[l] > 0]
+
+        report = classification_report(
+            gold, predictions,
+            labels=filtered_labels,
+            zero_division=0,
+            digits=4,
+        )
+
+        with open(metrics_file, "w", encoding="utf-8") as fm:
+            fm.write(report)
+
+        print(f"Saved results → {preds_file}")
+        print(f"Saved metrics → {metrics_file}")
 ###############################################################################
-# CLI entry‑point
+# CLI entry-point
 ###############################################################################
-
 
 if __name__ == "__main__":
     evaluate(
-        lang = args.language,
+        lang=args.language,
         base_model_path=args.base_model,
         adapter_path=args.adapter,
         test_data_path=args.data,
@@ -558,3 +532,4 @@ if __name__ == "__main__":
         max_examples=args.max_examples,
         max_length=args.max_length,
     )
+
