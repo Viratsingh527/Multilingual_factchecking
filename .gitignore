@@ -1,5 +1,7 @@
 # Data
 /data/interim/
+/data/external/
+/data/translated
 /data/raw/
 /data/processed/
 /LLaMA-Factory/data/
