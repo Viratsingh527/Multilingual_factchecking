@@ -50,11 +50,16 @@ def parse_args():
 
 args = parse_args()
 
-def extract_dataset_and_testset(name: str):
-    parts = name.split("_")
-    if len(parts) < 2:
-        raise ValueError("Filename must contain dataset and testset")
-    return parts[0], parts[1]
+def extract_dataset_and_testset(path: str):
+    p = Path(path)
+
+    dataset = p.parent.name       # last folder name → dataset
+    testset = p.stem              # file name without extension → testset
+
+    if not dataset or not testset:
+        raise ValueError("Could not extract dataset or testset from path")
+
+    return dataset, testset
 
 ###############################################################################
 # Canonical labels
@@ -94,7 +99,8 @@ LABEL_SETS = {
     },
 }
 
-dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)
+# dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)
+dataset_name, _ = extract_dataset_and_testset(args.data)
 label_config = LABEL_SETS[dataset_name]
 LABEL_ORDER = label_config["order"]
 LABEL_CANONICAL = label_config["canonical"]
@@ -246,6 +252,10 @@ def extract_label(response: str) -> str:
 # Data loading
 ###############################################################################
 
+import os
+import json
+import csv
+
 def load_data(file_path, lang="all", dataset="xfact"):
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -254,18 +264,28 @@ def load_data(file_path, lang="all", dataset="xfact"):
             data = json.load(f)
             if isinstance(data, dict):
                 data = [data]
+
     elif ext == ".jsonl":
         data = []
         with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     data.append(json.loads(line))
+
     elif ext == ".csv":
         data = []
         with open(file_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
+            reader = csv.DictReader(f, on_bad_lines='skip')
             for r in reader:
                 data.append(r)
+
+    elif ext == ".tsv":
+        data = []
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f, delimiter="\t", on_bad_lines='skip')
+            for r in reader:
+                data.append(r)
+
     else:
         raise ValueError(f"Unsupported format: {ext}")
 
@@ -279,6 +299,7 @@ def load_data(file_path, lang="all", dataset="xfact"):
         data = filtered
 
     return data
+
 
 
 ###############################################################################
@@ -320,9 +341,9 @@ def evaluate(
     print(f"→ Evaluating on {len(data)} examples\n")
 
     model_shortname = get_model_shortname(base_model_path)
-    dataset, testset = extract_dataset_and_testset(Path(test_data_path).stem)
-    if testset == "test":
-        testset = "Indomain"
+    dataset, testset = extract_dataset_and_testset(test_data_path)
+    # if testset == "test":
+    #     testset = "Indomain"
 
     technique, random_seed = extract_chunking_or_retrieval(adapter_path)
 
@@ -336,10 +357,21 @@ def evaluate(
         for ex in tqdm(data):
 
             try:
+                evidences = []
                 claim = ex["claim"]
                 gold_label = normalise_label(ex["label"])
                 lang_code = ex["language"]
-                evidences = ex["evidences"]
+                if technique == "semantic_chunking":
+                    evidences = ex["evidences"]
+                elif technique == "sentence_chunking":
+                    evidences = ex["evidences"]
+                elif technique == "search_snippet":
+                    for i in range(1,6):
+                        evidences.append({"evidence": ex[f"evidence_{i}"]})
+                elif technique == "llm":
+                    evidences = ex["evidences"]
+                elif technique == "concrete":
+                    evidences = ex["evidences"]
 
                 language = LANGUAGE_MAP.get(lang_code, lang_code)
                 prompt = build_chat_prompt(tokenizer, claim, evidences, language, dataset)
@@ -401,7 +433,7 @@ def evaluate(
             digits=4
         )
 
-        with open(out_dir_full / f"metrics__{random_seed}.txt", "w", encoding="utf-8") as f:
+        with open(out_dir_full / f"metrics_{random_seed}.txt", "w", encoding="utf-8") as f:
             f.write(report)
 
         print(f"\nSaved → {out_dir_full}")
