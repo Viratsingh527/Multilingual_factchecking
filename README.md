@@ -69,7 +69,7 @@ The framework supports the following languages:
 
 1. **Clone the repository**:
 ```bash
-git clone <repository-url>
+git clone https://github.com/Viratsingh527/Multilingual_factchecking.git
 cd Multilingual_factchecking
 ```
 
@@ -361,7 +361,7 @@ If you use this project in your research, please cite:
   title = {Multilingual Fact-Checking Framework},
   author = {Babu Kumar},
   year = {2024},
-  url = {<repository-url>}
+  url = {https://github.com/Viratsingh527/Multilingual_factchecking.git}
 }
 ```
 
