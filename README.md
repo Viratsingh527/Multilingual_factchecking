@@ -360,7 +360,7 @@ If you use this project in your research, please cite:
 @software{multilingual_factchecking,
   title = {Multilingual Fact-Checking Framework},
   author = {Babu Kumar},
-  year = {2024},
+  year = {2025},
   url = {https://github.com/Viratsingh527/Multilingual_factchecking.git}
 }
 ```
