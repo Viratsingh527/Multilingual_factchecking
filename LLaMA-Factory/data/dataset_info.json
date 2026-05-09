@@ -736,5 +736,30 @@
   },
   "Ru22fact_Train_Data_With_LLM_Retrieved_Evidence": {
     "file_name": "ru22fact_train_data_with_llm_retrieved_evidence.json"
+  },
+  "translated_xfact_train_data_with_custom_semantic_level_chunked_retrieved_evidence": {
+    "file_name": "translated_xfact_train_data_with_custom_semantic_level_chunked_retrieved_evidence.json"
+  },
+  "translated_xfact_train_data_with_fixed_size_level_chunked_retrieved_evidence": {
+    "file_name": "translated_xfact_train_data_with_fixed_size_level_chunked_retrieved_evidence.json"
+  },
+  "xfact_train_data_with_context_level_chunked_retrieved_evidence": {
+    "file_name": "xfact_train_data_with_context_level_chunked_retrieved_evidence.json"
+  },
+  "xfact_train_data_with_context_semantic_chunked_retrieved_evidence": {
+    "file_name": "xfact_train_data_with_context_semantic_chunked_retrieved_evidence.json"
+  },
+  "translated_ru22fact_train_data_with_semantic_level_chunked_retrieved_evidence": {
+    "file_name": "translated_ru22fact_train_data_with_semantic_level_chunked_retrieved_evidence.json"
+  },
+  "translated_xfact_train_data_with_semantic_level_chunked_retrieved_evidence": {
+    "file_name": "translated_xfact_train_data_with_semantic_level_chunked_retrieved_evidence.json"
+  },
+  "xfact_train_data_with_improved_semantic_chunked_retrieved_evidence": {
+    "file_name": "xfact_train_data_with_improved_semantic_chunked_retrieved_evidence.json"
+  },
+  "ru22fact_train_data_with_improved_semantic_chunked_retrieved_evidence": {
+    "file_name": "ru22fact_train_data_with_improved_semantic_chunked_retrieved_evidence.json"
   }
+
 }
