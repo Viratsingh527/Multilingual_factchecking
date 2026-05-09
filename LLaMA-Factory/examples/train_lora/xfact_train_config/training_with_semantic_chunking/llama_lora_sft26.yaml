@@ -12,14 +12,14 @@ lora_target: all
 ### dataset
 dataset: Xfact_Train_Data_With_Semantic_Level_Chunked_Retrieved_Evidence
 template: llama3
-cutoff_len: 10000
+cutoff_len: 13000
 # max_samples: 1000        # Optional: enable for quick test only
 overwrite_cache: true
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/llama_8b_xfact_semantic_chunking_evidences/lora/sft_26
+output_dir: saves/llama_8b_xfact_semantic_chunking_evidences_new/lora/sft_26
 logging_steps: 10
 save_steps: 500
 plot_loss: true
