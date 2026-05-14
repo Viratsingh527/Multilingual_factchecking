@@ -3514,7 +3514,9 @@ def main():
         if args.dataset == "translated_xfact":
             input_file = INTERIM_DATA_DIR / "translated_xfact" / f"{args.input}.jsonl"
         elif args.dataset == "xfact":
-            input_file = INTERIM_DATA_DIR / "X-FACT" / f"{args.input}.jsonl"
+            input_file = INTERIM_DATA_DIR / "xfact" / f"{args.input}.jsonl"
+        elif args.dataset == "ru22fact":
+            input_file = INTERIM_DATA_DIR / "ru22fact" / f"{args.input}.jsonl"
         elif args.dataset == "translated_ru22fact":
             input_file = INTERIM_DATA_DIR / "translated_ru22fact" / f"{args.input}.jsonl"
     else:
