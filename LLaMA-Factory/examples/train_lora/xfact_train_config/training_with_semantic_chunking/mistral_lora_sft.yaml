@@ -12,14 +12,14 @@ lora_target: all
 ### dataset
 dataset: Xfact_Train_Data_With_Semantic_Level_Chunked_Retrieved_Evidence
 template: mistral
-cutoff_len: 10000
+cutoff_len: 18000
 # max_samples: 1000        # Optional: enable for quick test only
 overwrite_cache: true
 preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: saves/mistral_7b_xfact_semantic_chunking_evidences/lora/sft
+output_dir: saves/mistral_7b_xfact_semantic_chunking_evidences_18000/lora/sft
 logging_steps: 10
 save_steps: 500
 plot_loss: true

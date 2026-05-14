@@ -633,8 +633,7 @@ def main():
         if args.dataset == "translated_xfact":
             input_file = INTERIM_DATA_DIR / "translated_xfact" / f"{args.input}.jsonl"
         else:
-            input_file = INTERIM_DATA_DIR / "X-FACT" / f"{args.input}.jsonl"
-            # input_file = INTERIM_DATA_DIR / args.dataset / f"{args.dataset}_{args.input}_with_webdata.jsonl"
+            input_file = INTERIM_DATA_DIR / args.dataset / f"{args.dataset}_{args.input}_with_webdata.jsonl"
     else:
         if args.dataset == "xfact":
             input_file = RAW_DATA_DIR / args.dataset / f"{args.input}.tsv"
