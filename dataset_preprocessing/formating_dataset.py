@@ -240,3 +240,4 @@ if __name__ == "__main__":
     convert_to_alpaca_format(input_file, output_file, args.dataset,args.type)
     print(f"{input_file} converted to Alpaca format and saved to {output_file}")
     print(f"Done. Wrote {output_file}")
+
