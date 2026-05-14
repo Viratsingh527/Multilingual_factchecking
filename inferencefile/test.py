@@ -40,7 +40,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 def parse_args():
     p = argparse.ArgumentParser(description="Evaluate Finetuned model with LoRA adapter")
     p.add_argument("--base_model", required=True)
-    p.add_argument("--adapter", required=True)
+    p.add_argument("--adapter", required=None)
     p.add_argument("--data", required=True)
     p.add_argument("--out_dir", default="outputs")
     p.add_argument("--language", default="all")
@@ -53,13 +53,14 @@ args = parse_args()
 def extract_dataset_and_testset(path: str):
     p = Path(path)
 
+    technique = p.parent.parent.name
     dataset = p.parent.name       # last folder name → dataset
     testset = p.stem              # file name without extension → testset
 
     if not dataset or not testset:
         raise ValueError("Could not extract dataset or testset from path")
 
-    return dataset, testset
+    return dataset, testset , technique
 
 ###############################################################################
 # Canonical labels
@@ -67,6 +68,26 @@ def extract_dataset_and_testset(path: str):
 
 LABEL_SETS = {
     "xfact": {
+        "order": [
+            "true", "mostly true", "partly true/misleading", "false",
+            "mostly false", "complicated/hard-to-categorise", "other",
+        ],
+        "canonical": {
+            "true": "true",
+            "mostly true": "mostly true",
+            "mostly-true": "mostly true",
+            "partly true/misleading": "partly true/misleading",
+            "partly-true/misleading": "partly true/misleading",
+            "false": "false",
+            "mostly false": "mostly false",
+            "mostly-false": "mostly false",
+            "complicated/hard-to-categorise": "complicated/hard-to-categorise",
+            "complicated/hard to categorise": "complicated/hard-to-categorise",
+            "complicated/hard to categorize": "complicated/hard-to-categorise",
+            "other": "other",
+        },
+    },
+    "translated_xfact": {
         "order": [
             "true", "mostly true", "partly true/misleading", "false",
             "mostly false", "complicated/hard-to-categorise", "other",
@@ -97,10 +118,21 @@ LABEL_SETS = {
             "not enough info": "nei",
         },
     },
+    "translated_ru22fact": {
+        "order": ["supported", "refuted", "nei"],
+        "canonical": {
+            "supported": "supported",
+            "support": "supported",
+            "refuted": "refuted",
+            "refute": "refuted",
+            "nei": "nei",
+            "not enough info": "nei",
+        },
+    },
 }
 
 # dataset_name, _ = extract_dataset_and_testset(Path(args.data).stem)
-dataset_name, _ = extract_dataset_and_testset(args.data)
+dataset_name, _ , _= extract_dataset_and_testset(args.data)
 label_config = LABEL_SETS[dataset_name]
 LABEL_ORDER = label_config["order"]
 LABEL_CANONICAL = label_config["canonical"]
@@ -172,8 +204,17 @@ SYSTEM_PROMPT = {
         "Output format:\nClaim Veracity: [label]\n\n"
         "Labels: TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
         "COMPLICATED/HARD-TO-CATEGORISE, OTHER.",
+    "translated_xfact":
+        "You are a English fact-checking expert. You are given a news claim along with raw evidence. "
+        "Your task is to classify the veracity strictly based on provided evidence.\n\n"
+        "Output format:\nClaim Veracity: [label]\n\n"
+        "Labels: TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
+        "COMPLICATED/HARD-TO-CATEGORISE, OTHER.",
     "ru22fact":
         "You are a multilingual fact-checking expert. Classify the claim into: SUPPORTED, REFUTED, NEI.\n\n"
+        "Output format:\nClaim Veracity: [label]",
+    "translated_ru22fact":
+        "You are a english fact-checking expert. Classify the claim into: SUPPORTED, REFUTED, NEI.\n\n"
         "Output format:\nClaim Veracity: [label]"
 }
 
@@ -183,10 +224,28 @@ def build_prompt(claim: str, evidences: List[Dict[str, str]], language: str, dat
             f"Classify the given {language} claim into seven categories: "
             "TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
             "COMPLICATED/HARD-TO-CATEGORISE, OTHER.\nProvide exactly one label."
+            # f"Classify the given {language} claim into one of the seven categories (TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, COMPLICATED/HARD-TO-CATEGORISE, OTHER) based on the provided evidence."
+            # "\n\n1. TRUE: Fully supported by the evidence."
+            # "\n2. MOSTLY-TRUE: Mostly supported but with minor inaccuracies."
+            # "\n3. PARTLY-TRUE/MISLEADING: Partially supported, but includes significant omissions."
+            # "\n4. FALSE: Clearly contradicted or unsupported by the evidence."
+            # "\n5. MOSTLY-FALSE: Largely incorrect with only a small element of truth."
+            # "\n6. COMPLICATED/HARD-TO-CATEGORISE: Too complex to assign a straightforward label."
+            # "\n7. OTHER: Does not fit into any of the above categories."
         )
-    else:
+    elif dataset == "translated_xfact":
+        instruction = (
+            f"Classify the given English claim into seven categories: "
+            "TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
+            "COMPLICATED/HARD-TO-CATEGORISE, OTHER.\nProvide exactly one label."
+        )
+    elif dataset == "ru22fact":
         instruction = (
             f"Classify the given {language} claim into: SUPPORTED, REFUTED, NEI.\nProvide exactly one label."
+        )
+    elif dataset == "translated_ru22fact":
+        instruction = (
+            f"Classify the given English claim into: SUPPORTED, REFUTED, NEI.\nProvide exactly one label."
         )
 
     evidence_blocks = "\n\n".join(
@@ -327,8 +386,12 @@ def evaluate(
         trust_remote_code=True,
     )
 
-    print("Loading LoRA adapter …")
-    model = PeftModel.from_pretrained(model, adapter_path)
+    if adapter_path is not None and str(adapter_path).strip() != "":
+        print("Loading LoRA adapter …")
+        model = PeftModel.from_pretrained(model, adapter_path)
+    else:
+        print("No adapter provided. Running inference with base model only.")
+
     model.eval()
 
     print("Reading examples …")
@@ -341,12 +404,16 @@ def evaluate(
     print(f"→ Evaluating on {len(data)} examples\n")
 
     model_shortname = get_model_shortname(base_model_path)
-    dataset, testset = extract_dataset_and_testset(test_data_path)
+    dataset, testset, _ = extract_dataset_and_testset(test_data_path)
     # if testset == "test":
     #     testset = "Indomain"
-
-    technique, random_seed = extract_chunking_or_retrieval(adapter_path)
-
+    print(f"\ntestset: {test_data_path}"+50*"-"+"\n")
+    if adapter_path is not None and str(adapter_path).strip() != "":
+        technique, random_seed = extract_chunking_or_retrieval(adapter_path)
+    else:
+        _ , _ , technique = extract_dataset_and_testset(test_data_path)
+        random_seed = "default"
+    print("#####################################"+f"\nTechnique: {technique}\n"+"#"*40)
     #######################################################################
     # MODE 1 — Normal evaluation when lang == all
     #######################################################################
@@ -361,7 +428,7 @@ def evaluate(
                 claim = ex["claim"]
                 gold_label = normalise_label(ex["label"])
                 lang_code = ex["language"]
-                if technique == "semantic_chunking":
+                if technique == "semantic_chunking" or technique == "base_model" or technique == "custom_chunking" or technique == "context_chunking":
                     evidences = ex["evidences"]
                 elif technique == "sentence_chunking":
                     evidences = ex["evidences"]
@@ -372,7 +439,8 @@ def evaluate(
                     evidences = ex["evidences"]
                 elif technique == "concrete":
                     evidences = ex["evidences"]
-
+                else:
+                    evidences = ex["evidences"]
                 language = LANGUAGE_MAP.get(lang_code, lang_code)
                 prompt = build_chat_prompt(tokenizer, claim, evidences, language, dataset)
 

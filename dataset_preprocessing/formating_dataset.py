@@ -10,7 +10,7 @@ import os
 def load_dataset(path):
     """Load a dataset from jsonl, json, csv, or tsv into a list of dictionaries."""
     ext = os.path.splitext(path)[1].lower()
-
+    print(f"Loading dataset from {path} with extension {ext}... ")
     if ext == ".jsonl":
         with open(path, "r", encoding="utf-8") as f:
             return [json.loads(line) for line in f if line.strip()]
@@ -81,7 +81,33 @@ def get_instruction_and_label(item, dataset):
             "Provide exactly one label."
         )
         output_label = label.lower()
+    elif dataset == "translated_xfact":
+        instruction = (
+            f"Classify the given english claim into one of the seven categories "
+            "(TRUE, MOSTLY-TRUE, PARTLY-TRUE/MISLEADING, FALSE, MOSTLY-FALSE, "
+            "COMPLICATED/HARD-TO-CATEGORISE, OTHER) based on the provided evidence.\n\n"
+            "1. TRUE: Fully supported by the evidence.\n"
+            "2. MOSTLY-TRUE: Mostly supported but with minor inaccuracies.\n"
+            "3. PARTLY-TRUE/MISLEADING: Partially supported, but includes significant omissions.\n"
+            "4. FALSE: Clearly contradicted or unsupported by the evidence.\n"
+            "5. MOSTLY-FALSE: Largely incorrect with only a small element of truth.\n"
+            "6. COMPLICATED/HARD-TO-CATEGORISE: Too complex to assign a straightforward label.\n"
+            "7. OTHER: Does not fit into any of the above categories.\n\n"
+            "Provide exactly one label."
+        )
+        output_label = label.lower()
 
+    elif dataset == "translated_ru22fact":
+        language = item.get("language", "Unknown")
+        instruction = (
+            f"Classify the given english claim into one of three categories "
+            "(SUPPORTED, REFUTED, NEI) based on the provided evidence.\n\n"
+            "1. SUPPORTED: The evidence supports the claim.\n"
+            "2. REFUTED: The evidence contradicts the claim.\n"
+            "3. NEI: Not enough information to verify.\n\n"
+            "Provide exactly one label."
+        )
+        output_label = label.lower()
     elif dataset == "ru22fact":
         language = item.get("language", "Unknown")
         instruction = (
@@ -157,25 +183,30 @@ def convert_to_alpaca_format(input_path, output_path, dataset, data_type=None):
         )
 
     # --- Save as JSON ---
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(alpaca_data, f, indent=2, ensure_ascii=False)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="xfact")
     parser.add_argument("--input", type=str, default="train",
                         help="Name of input file (without extension).")
     parser.add_argument("--type", type=str,
-                        choices=["semantic", "sentence", "search_snippet", "concrete","llm"],
+                        choices=["custom_semantic","semantic", "sentence", "search_snippet", "concrete","llm", "fixed_size","context","improved_semantic"],
                         default="semantic",
                         help="Type of chunking or retrieval (only used for xfact).")
 
     args = parser.parse_args()
 
     if args.dataset == "xfact":
-        if args.type in ["semantic", "sentence"]:
-            input_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"xfact_{args.input}_with_{args.type}_level_chunked_retrieved_evidence.jsonl"
-            output_file = f"LLaMA-Factory/data/xfact_{args.input}_data_with_{args.type}_level_chunked_retrieved_evidence.json"
+        if args.type in ["semantic", "sentence","context","fixed_size","custom_semantic","improved_semantic"]:
+            input_file = PROCESSED_DATA_DIR/f"{args.type}_chunking"/f"{args.dataset}"/f"train.jsonl"
+            # input_file = PROCESSED_DATA_DIR/f"{args.type}_semantic"/f"{args.dataset}"/f"train.jsonl"
+            # input_file = PROCESSED_DATA_DIR/f"{args.dataset}"/f"xfact_{args.input}_with_{args.type}_level_chunked_retrieved_evidence.jsonl"
+            # output_file = f"LLaMA-Factory/data/xfact_{args.input}_data_with_{args.type}_level_chunked_retrieved_evidence.json"
+            output_file = f"LLaMA-Factory/data/xfact_{args.input}_data_with_{args.type}_chunked_retrieved_evidence.json"
+
         elif args.type == "search_snippet":
             input_file = RAW_DATA_DIR / f"{args.input}.tsv"
             output_file = f"LLaMA-Factory/data/xfact_{args.input}_data_with_{args.type}.json"
@@ -184,11 +215,22 @@ if __name__ == "__main__":
             output_file = f"LLaMA-Factory/data/xfact_{args.input}_data_with_{args.type}.json"
         else:
             raise ValueError(f"Invalid type: {args.type}")
+    elif args.dataset == "translated_xfact":
+        if args.type in ["semantic","custom_semantic", "sentence","fixed_size","context"]:
+            input_file = PROCESSED_DATA_DIR/f"{args.type}_chunking"/f"{args.dataset}"/f"train.jsonl"
+            # input_file = PROCESSED_DATA_DIR/f"{args.dataset}_fixed_256_32_k=3"/f"translated_xfact_{args.input}_with_{args.type}_chunked_retrieved_evidence.jsonl"
+            output_file = f"LLaMA-Factory/data/translated_xfact_{args.input}_data_with_{args.type}_level_chunked_retrieved_evidence.json"
+    elif args.dataset == "translated_ru22fact":
+        if args.type in ["custom_semantic", "sentence","fixed_size","context","semantic"]:
+            input_file = PROCESSED_DATA_DIR/f"{args.type}_chunking"/f"{args.dataset}"/f"train.jsonl"
+            # input_file = PROCESSED_DATA_DIR/f"{args.dataset}_fixed_256_32_k=3"/f"translated_ru22fact_{args.input}_with_{args.type}_chunked_retrieved_evidence.jsonl"
+            output_file = f"LLaMA-Factory/data/translated_ru22fact_{args.input}_data_with_{args.type}_level_chunked_retrieved_evidence.json"
+
 
     elif args.dataset == "ru22fact":
-        if args.type in ["semantic", "sentence"]:
-            input_file = PROCESSED_DATA_DIR /f"{args.dataset}"/ f"ru22fact_{args.input}_with_{args.type}_level_chunked_retrieved_evidence.jsonl"
-            output_file = f"LLaMA-Factory/data/ru22fact_{args.input}_data_with_{args.type}_level_chunked_retrieved_evidence.json"
+        if args.type in ["semantic", "sentence","context","fixed_size","custom_semantic","improved_semantic"]:
+            input_file = PROCESSED_DATA_DIR/f"{args.type}_chunking"/f"{args.dataset}"/f"train.jsonl"
+            output_file = f"LLaMA-Factory/data/ru22fact_{args.input}_data_with_{args.type}_chunked_retrieved_evidence.json"
         elif args.type == "llm":
             input_file = RAW_DATA_DIR /f"{args.dataset}"/f"{args.input}.csv"
             output_file = f"LLaMA-Factory/data/ru22fact_{args.input}_data_with_{args.type}_retrieved_evidence.json"            
@@ -196,4 +238,6 @@ if __name__ == "__main__":
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
     convert_to_alpaca_format(input_file, output_file, args.dataset,args.type)
+    print(f"{input_file} converted to Alpaca format and saved to {output_file}")
     print(f"Done. Wrote {output_file}")
+
