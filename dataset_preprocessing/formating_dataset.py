@@ -197,3 +197,4 @@ if __name__ == "__main__":
 
     convert_to_alpaca_format(input_file, output_file, args.dataset,args.type)
     print(f"Done. Wrote {output_file}")
+
