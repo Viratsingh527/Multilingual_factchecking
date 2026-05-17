@@ -1,0 +1,5 @@
+category,count,percentage
+Both Correct,2969,92.43
+"Ours Correct, Baseline Wrong",147,4.58
+Both Wrong,55,1.71
+"Baseline Correct, Ours Wrong",41,1.28

@@ -1,0 +1,7 @@
+true_label_base,predicted_label_ours,count,percentage
+refuted,nei,24,24.74
+nei,refuted,22,22.68
+nei,supported,20,20.62
+supported,nei,20,20.62
+supported,refuted,8,8.25
+refuted,supported,3,3.09
