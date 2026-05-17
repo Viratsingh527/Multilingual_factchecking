@@ -19,17 +19,20 @@ def accuracy(y_true, y_pred):
 
 import re
 
+import re
+
 def extract_claim_from_input(text):
     text = str(text)
 
-    match = re.search(
-        r"Claim:\s*(.*?)\s*Evidences:",
-        text,
-        flags=re.DOTALL
-    )
+    # remove escaped quotes style issues lightly
+    text = text.replace('\\"', '"')
+
+    pattern = r"Claim:\s*(.*?)(?=\n\s*(?:Evidences?:|Evidence[_\s-]*1\s*:|##output|Output format:))"
+
+    match = re.search(pattern, text, flags=re.DOTALL | re.IGNORECASE)
 
     if match:
-        return match.group(1).strip()
+        return match.group(1).strip().strip('"').strip()
 
     return None
 
