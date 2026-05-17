@@ -1,0 +1,2 @@
+both_correct,both_wrong,baseline_correct_ours_wrong,ours_correct_baseline_wrong,chi_square,p_value
+1113,1456,347,465,16.858374384236452,4.0275227519703805e-05

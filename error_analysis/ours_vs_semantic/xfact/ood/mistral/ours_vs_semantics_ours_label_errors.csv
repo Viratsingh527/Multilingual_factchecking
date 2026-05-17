@@ -1,0 +1,27 @@
+true_label_base,predicted_label_ours,count,percentage
+false,partly true/misleading,284,27.15
+partly true/misleading,false,257,24.57
+complicated/hard-to-categorise,partly true/misleading,72,6.88
+partly true/misleading,mostly false,66,6.31
+true,mostly true,60,5.74
+false,mostly false,51,4.88
+complicated/hard-to-categorise,false,31,2.96
+partly true/misleading,mostly true,29,2.77
+true,partly true/misleading,29,2.77
+partly true/misleading,true,28,2.68
+complicated/hard-to-categorise,mostly true,24,2.29
+true,false,23,2.2
+false,other,13,1.24
+complicated/hard-to-categorise,true,11,1.05
+partly true/misleading,other,11,1.05
+true,other,9,0.86
+false,true,9,0.86
+partly true/misleading,complicated/hard-to-categorise,8,0.76
+true,mostly false,7,0.67
+other,false,7,0.67
+false,mostly true,7,0.67
+false,complicated/hard-to-categorise,4,0.38
+complicated/hard-to-categorise,mostly false,2,0.19
+other,mostly true,2,0.19
+other,partly true/misleading,1,0.1
+other,complicated/hard-to-categorise,1,0.1
