@@ -10,7 +10,9 @@
 /run_all.sh
 # Mac OS-specific storage files
 .DS_Store
-
+/error_analysis/ours_vs_semantic/xfact/zeroshot/llama/ours_vs_semantics_instance_comparison.csv
+/error_analysis/ours_vs_semantic/xfact/zeroshot/mistral/ours_vs_semantics_instance_comparison.csv
+/error_analysis/ours_vs_semantic/xfact/zeroshot/gemma/ours_vs_semantics_instance_comparison.csv
 # vim
 *.swp
 *.swo
